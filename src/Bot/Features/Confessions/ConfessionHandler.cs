@@ -23,14 +23,21 @@ public sealed class ConfessionHandler(BotDb db, Ui ui, DraftStore drafts, Uk uk,
         await drafts.Begin(u, "confession", null, ct); u.Go(UserState.ConfessionDraft);
         ui.Say(u, "confession.invite", ui.Reply("done", "exit"));
     }
-    public async Task Confirm(BotUser u, CancellationToken ct)
+        public async Task Confirm(BotUser u, CancellationToken ct)
     {
         var d = await drafts.Get(u, ct);
-        if (d is null || d.ReplaceOnNext || !await drafts.HasText(u, ct)) { ui.Say(u, "confession.empty"); return; }
+
+        if (d is null || d.ReplaceOnNext || !await drafts.HasText(u, ct))
+        {
+            ui.Say(u, "confession.empty");
+            return;
+        }
+
         u.Go(UserState.ConfessionConfirm);
-        ui.Say(u, "done", ui.Reply("exit"));
-        ui.Say(u, "confession.confirm", ui.Inline(u, ("conf:send", "confession.send"), ("conf:edit", "confession.edit"), ("conf:cancel", "cancel")));
-    }
+
+        ui.Say(u, "confession.confirm",
+            ui.Reply("confession.send", "confession.edit", "cancel"));
+        }
     public async Task Edit(BotUser u, CancellationToken ct)
     {
         var d = await drafts.Get(u, ct) ?? throw new InvalidOperationException("Draft missing");
@@ -69,12 +76,24 @@ public sealed class ConfessionHandler(BotDb db, Ui ui, DraftStore drafts, Uk uk,
         {
             var parts = await db.Outbox.Where(x => x.OperationId == s.OperationId).Select(x => x.Status).ToListAsync(ct);
             var u = await db.Users.SingleOrDefaultAsync(x => x.Id == s.UserId, ct); if (u is null || parts.Count == 0) continue;
-            if (parts.All(x => x == "sent"))
+                        if (parts.All(x => x == "sent"))
             {
-                s.Status = "sent"; ui.Say(u, "confession.sent");
-                await db.Drafts.Where(x => x.Id == s.DraftId).ExecuteDeleteAsync(ct);
-                if (u.State == UserState.ConfessionSending) { ui.Menu(u); ui.OfferReminder(u); }
-            }
+                s.Status = "sent";
+
+                await db.Drafts
+                    .Where(x => x.Id == s.DraftId)
+                    .ExecuteDeleteAsync(ct);
+
+                if (u.State == UserState.ConfessionSending)
+                {
+                    ui.Menu(u, message: uk["confession.sent"]);
+                    ui.OfferReminder(u);
+                }
+                else
+                {
+                    ui.Say(u, "confession.sent");
+                }
+                }
             else if (parts.Any(x => x == "delivery_unknown")) { s.Status = "unknown"; ui.Say(u, "confession.unknown"); }
             else if (parts.Any(x => x == "failed"))
             {

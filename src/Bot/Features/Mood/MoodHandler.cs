@@ -24,7 +24,9 @@ public sealed class MoodHandler(BotDb db, Ui ui, DraftStore drafts, Uk uk, ICloc
         var d = await drafts.Get(u, ct);
         if (d?.MoodValue is not { } value) return;
         db.Moods.Add(new() { UserId = u.Id, Value = value, Note = skip ? null : await drafts.Read(d, ct), RecordedAt = clock.UtcNow });
-        await drafts.Delete(u, ct); ui.Say(u, "mood.saved"); ui.Menu(u); ui.OfferReminder(u);
+        await drafts.Delete(u, ct);
+        ui.Menu(u, message: uk["mood.saved"]);
+        ui.OfferReminder(u);
     }
     public async Task History(BotUser u, string direction, CancellationToken ct)
     {

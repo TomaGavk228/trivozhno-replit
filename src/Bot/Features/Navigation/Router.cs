@@ -23,7 +23,8 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
         {
             if (command != "/start") { ui.Enqueue(null, input.TelegramId, uk["start.required"]); return; }
             u = new() { TelegramId = input.TelegramId, CreatedAt = clock.UtcNow }; db.Users.Add(u);
-            ui.Menu(u); return;
+            ui.Menu(u, firstStart: true);
+            return;
         }
         u.Blocked = false;
         if (input.Unsupported) { ui.Say(u, "unsupported"); return; }
@@ -39,6 +40,55 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
             await Callback(u, split[0], ct); return;
         }
         if (string.IsNullOrWhiteSpace(input.Text)) { ui.Say(u, "empty"); return; }
+                var menuButtons = new (string Key, string Action)[]
+        {
+            ("menu.talk", "menu:talk"),
+            ("menu.confession", "menu:confession"),
+            ("menu.mood", "menu:mood"),
+            ("menu.settings", "menu:settings")
+        };
+
+        // Головна клавіатура доступна також поруч із
+        // налаштуваннями та історією з inline-кнопками.
+        var mainKeyboardVisible = u.State is UserState.MainMenu
+            or UserState.Settings or UserState.MoodSelect or UserState.MoodHistory
+            or UserState.ReminderFrequency or UserState.ConfirmMoodContext
+            or UserState.ConfirmClearMemory or UserState.ConfirmDeleteData
+            || u.State == UserState.ReminderTime && !u.CustomTime;
+
+        if (mainKeyboardVisible)
+        {
+            foreach (var button in menuButtons)
+            {
+                if (!uk.Is(button.Key, input.Text)) continue;
+
+                u.Go(UserState.MainMenu);
+                u.PendingAction = "";
+                await Callback(u, button.Action, ct);
+                return;
+            }
+        }
+
+        if (u.State == UserState.ConfessionConfirm && options.Confessions)
+        {
+            if (uk.Is("confession.send", input.Text))
+            {
+                await confessions.Send(u, ct);
+                return;
+            }
+
+            if (uk.Is("confession.edit", input.Text))
+            {
+                await confessions.Edit(u, ct);
+                return;
+            }
+
+            if (uk.Is("cancel", input.Text))
+            {
+                await Exit(u, false, ct);
+                return;
+            }
+            }
         if (u.State == UserState.ChatActive && uk.Is("chat.end", input.Text)) { await Exit(u, true, ct); return; }
         if (HasExitReply(u.State) && uk.Is("exit", input.Text)) { await Exit(u, false, ct); return; }
         if (u.State == UserState.ConfessionDraft && uk.Is("done", input.Text)) { await confessions.Confirm(u, ct); return; }
@@ -49,7 +99,16 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
             return;
         }
         // Old/hidden service keys never become a confession, note or AI message.
-        if (new[] { "chat.end", "exit", "done", "mood.save", "mood.skip" }.Any(key => uk.Is(key, input.Text))) { ui.Say(u, "stale"); return; }
+                if (new[]
+        {
+            "chat.end", "exit", "done", "mood.save", "mood.skip",
+            "menu.talk", "menu.confession", "menu.mood", "menu.settings",
+            "confession.send", "confession.edit", "cancel"
+        }.Any(key => uk.Is(key, input.Text)))
+        {
+            ui.Say(u, "stale");
+            return;
+            }
         switch (u.State)
         {
             case UserState.ChatActive when options.Conversation: await chat.Receive(u, input, ct); break;

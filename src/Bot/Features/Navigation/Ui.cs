@@ -30,17 +30,41 @@ public sealed class Ui(BotDb db, Uk uk, IClock clock, BotOptions options)
             OperationId = op, PartIndex = i, CreatedAt = clock.UtcNow, AvailableAt = clock.UtcNow
         });
     }
-    public void Menu(BotUser u, bool removeReply = true)
+    public void Menu(BotUser u, bool firstStart = false, string? message = null)
     {
-        u.Go(UserState.MainMenu); u.PendingAction = "";
-        if (removeReply) Say(u, "menu.return", RemoveKeyboard);
-        var rows = new List<(string, string)>(); var descriptions = new List<string>();
-        if (options.Conversation) { rows.Add(("menu:talk", "menu.talk")); descriptions.Add(uk["description.talk"]); }
-        if (options.Confessions) { rows.Add(("menu:confession", "menu.confession")); descriptions.Add(uk["description.confession"]); }
-        if (options.Mood) { rows.Add(("menu:mood", "menu.mood")); descriptions.Add(uk["description.mood"]); }
-        rows.Add(("menu:settings", "menu.settings")); descriptions.Add(uk["description.settings"]);
-        Text(u, uk.Format("welcome", string.Join('\n', descriptions)), Inline(u, rows.ToArray()));
-    }
+        u.Go(UserState.MainMenu);
+        u.PendingAction = "";
+
+        var keys = new List<string>();
+        var descriptions = new List<string>();
+
+        if (options.Conversation)
+        {
+            keys.Add("menu.talk");
+            descriptions.Add(uk["description.talk"]);
+        }
+
+        if (options.Confessions)
+        {
+            keys.Add("menu.confession");
+            descriptions.Add(uk["description.confession"]);
+        }
+
+        if (options.Mood)
+        {
+            keys.Add("menu.mood");
+            descriptions.Add(uk["description.mood"]);
+        }
+
+        keys.Add("menu.settings");
+        descriptions.Add(uk["description.settings"]);
+
+        var text = firstStart
+            ? uk.Format("welcome", string.Join('\n', descriptions))
+            : message ?? uk["menu.title"];
+
+        Text(u, text, Reply(keys.ToArray()));
+        }
     public void OfferReminder(BotUser u)
     {
         if (!options.Reminders || !options.Conversation || u.ReminderPromptShown || u.State != UserState.MainMenu) return;
@@ -75,7 +99,7 @@ public sealed class DraftStore(BotDb db, IClock clock, Ui ui)
         if (d.ReplaceOnNext) { await db.DraftParts.Where(x => x.DraftId == d.Id).ExecuteDeleteAsync(ct); d.ReplaceOnNext = false; }
         if (await db.DraftParts.CountAsync(x => x.DraftId == d.Id, ct) >= 4096)
         { ui.Say(u, "draft.capacity"); return; }
-        db.DraftParts.Add(new() { DraftId = d.Id, Text = text }); ui.Say(u, "draft.saved");
+        db.DraftParts.Add(new() { DraftId = d.Id, Text = text });
     }
     public async Task<string> Read(Draft d, CancellationToken ct) => string.Join("\n\n", await db.DraftParts.Where(x => x.DraftId == d.Id).OrderBy(x => x.Id).Select(x => x.Text).ToListAsync(ct));
 }

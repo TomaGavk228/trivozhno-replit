@@ -60,7 +60,8 @@ public sealed class ReminderHandler(BotDb db, Ui ui, Uk uk, IClock clock, BotOpt
         if (r is null) { r = new() { UserId = u.Id }; db.Reminders.Add(r); }
         r.IntervalDays = u.PendingFrequency; r.LocalTime = time; r.Timezone = options.Timezone; r.Enabled = true; r.Version++;
         r.NextDueAt = ReminderDates.First(clock.UtcNow, time, r.Timezone); u.ReminderPromptShown = true;
-        await CancelPending(u, ct); ui.Text(u, uk.Format("reminder.saved", r.IntervalDays, time)); ui.Menu(u);
+                await CancelPending(u, ct);
+        ui.Menu(u, message: uk.Format("reminder.saved", r.IntervalDays, time));
     }
     public async Task Toggle(BotUser u, bool enable, CancellationToken ct)
     {
