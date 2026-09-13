@@ -1,0 +1,13 @@
+run = ["bash", "scripts/run.sh"]
+entrypoint = "README.md"
+
+[nix]
+channel = "stable-24_05"
+
+[env]
+PORT = "8080"
+DOTNET_CLI_TELEMETRY_OPTOUT = "1"
+
+[[ports]]
+localPort = 8080
+externalPort = 80

@@ -1,0 +1,263 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="58f4a2ed-ed21-40db-9110-69fc2fefa142" name="@localhost 2026-09-12 22:24:21" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-12T22:24:21.7038561+00:00" queuing="2026-09-12T22:24:21.7038562+00:00" start="2026-09-12T22:24:20.9921039+00:00" finish="2026-09-12T22:24:39.7663056+00:00" />
+  <TestSettings name="default" id="0186d75b-c101-425e-975b-4f834f3874d1">
+    <Deployment runDeploymentRoot="_localhost_2026-09-12_22_24_21" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="8c25809c-40cc-453f-a8ea-ae76f5995092" testId="d69664c7-78c6-587f-2f2a-574ea75c5587" testName="Trivozhno.Tests.CoreTests.LexiconUsesExplicitFormsRatherThanFiveCharacterPrefixes" computerName="localhost" duration="00:00:00.0281955" startTime="2026-09-12T22:24:21.5621025+00:00" endTime="2026-09-12T22:24:21.5812154+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8c25809c-40cc-453f-a8ea-ae76f5995092" />
+    <UnitTestResult executionId="6b11a06f-bf6d-4908-8fcb-9fe58ae5398c" testId="35993341-704a-d4c9-ccf7-05d6ab220d9c" testName="Trivozhno.Tests.BehaviorTests.ReminderOnlyOnceAndNoBacklogOrActiveInputInterruptions" computerName="localhost" duration="00:00:03.0917300" startTime="2026-09-12T22:24:21.6637185+00:00" endTime="2026-09-12T22:24:24.7299947+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6b11a06f-bf6d-4908-8fcb-9fe58ae5398c" />
+    <UnitTestResult executionId="56158e55-8ef1-4807-b9fd-04044ab5e253" testId="a122c6fb-64ab-00f2-d04e-b60a2a6cde9d" testName="Trivozhno.Tests.InfrastructureTests.RestoredPendingAiAndDraftAreUsable" computerName="localhost" duration="00:00:00.3835903" startTime="2026-09-12T22:24:35.6310613+00:00" endTime="2026-09-12T22:24:36.0207141+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="56158e55-8ef1-4807-b9fd-04044ab5e253" />
+    <UnitTestResult executionId="5f02a72a-263d-48a5-bacc-5dafe2b597b7" testId="8b70130f-fc3b-b1a5-2aaa-52975786acd2" testName="Trivozhno.Tests.CoreTests.ChunksHavePageMetadataAndBoundedOverlap" computerName="localhost" duration="00:00:00.0062960" startTime="2026-09-12T22:24:21.6260494+00:00" endTime="2026-09-12T22:24:21.6323076+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5f02a72a-263d-48a5-bacc-5dafe2b597b7" />
+    <UnitTestResult executionId="c469d58b-fd85-4233-b127-c84b012e1be5" testId="b97650e5-f68c-3123-2f91-c8aafec28cb0" testName="Trivozhno.Tests.InfrastructureTests.GroqFallbackUsesOwnProfileAnd401DoesNotRetry" computerName="localhost" duration="00:00:00.2230076" startTime="2026-09-12T22:24:37.0284530+00:00" endTime="2026-09-12T22:24:37.2514712+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c469d58b-fd85-4233-b127-c84b012e1be5" />
+    <UnitTestResult executionId="45acfcb4-3d57-4f5d-b26b-e657dd5770f2" testId="3a6c6717-fa60-89ea-07cc-c9e2c8d35691" testName="Trivozhno.Tests.BehaviorTests.RapidMessagesAreAnsweredInOrderWithPreviousAnswerAndNoCrossUserContext" computerName="localhost" duration="00:00:00.8619997" startTime="2026-09-12T22:24:29.5719690+00:00" endTime="2026-09-12T22:24:30.4326570+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="45acfcb4-3d57-4f5d-b26b-e657dd5770f2" />
+    <UnitTestResult executionId="9f0d8e9b-88a8-4dc5-a27f-ff893a76c166" testId="4fbc4833-5d2e-6660-6ee6-cce38a9dc4f6" testName="Trivozhno.Tests.InfrastructureTests.DuplicateInboxIsIdempotentAndPoisonDoesNotBlockAnotherPerson" computerName="localhost" duration="00:00:00.2529970" startTime="2026-09-12T22:24:38.1073272+00:00" endTime="2026-09-12T22:24:38.3594136+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9f0d8e9b-88a8-4dc5-a27f-ff893a76c166" />
+    <UnitTestResult executionId="9a8d46ae-fd25-4cbf-bf68-df0bb35669e0" testId="a45f64e1-66bb-2ca2-3118-574dfa46487b" testName="Trivozhno.Tests.InfrastructureTests.ThousandAcceptedUpdatesReachTerminalStatusWithIsolatedContexts" computerName="localhost" duration="00:00:00.0010000" startTime="2026-09-12T22:24:38.1043098+00:00" endTime="2026-09-12T22:24:38.1047708+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9a8d46ae-fd25-4cbf-bf68-df0bb35669e0">
+      <Output>
+        <ErrorInfo>
+          <Message>Set RUN_LOAD_TEST=1 and TEST_DATABASE_URL.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="e3925b83-049e-4ddd-b3a0-fe4f210d0fbe" testId="b2916307-c2a7-8e09-83f6-a4acc0a9f0ef" testName="Trivozhno.Tests.BehaviorTests.MoodContextRequiresConsentAndIsExcludedFromNewRequestsAfterDisable" computerName="localhost" duration="00:00:00.7797334" startTime="2026-09-12T22:24:30.9581814+00:00" endTime="2026-09-12T22:24:31.7397733+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e3925b83-049e-4ddd-b3a0-fe4f210d0fbe" />
+    <UnitTestResult executionId="d1d8c13b-5c50-4e72-adf9-911b688c2832" testId="00d2ad59-855d-d745-1c90-281110bb8426" testName="Trivozhno.Tests.BehaviorTests.ClearDuringAiDoesNotRestoreDeletedMemory" computerName="localhost" duration="00:00:00.4516508" startTime="2026-09-12T22:24:32.0457295+00:00" endTime="2026-09-12T22:24:32.4969497+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d1d8c13b-5c50-4e72-adf9-911b688c2832" />
+    <UnitTestResult executionId="d3d78655-8223-4a41-aa1e-3a3368c12191" testId="4f540cd5-5660-b1ae-369d-29b25c60e332" testName="Trivozhno.Tests.BehaviorTests.ConfessionEditInvalidatesOldButtonsAndDoubleSendDoesNotDuplicate" computerName="localhost" duration="00:00:00.9126455" startTime="2026-09-12T22:24:32.8897295+00:00" endTime="2026-09-12T22:24:33.8027622+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d3d78655-8223-4a41-aa1e-3a3368c12191" />
+    <UnitTestResult executionId="72c484f0-1143-4f94-a18e-ecaa7a20be55" testId="045e6336-bb5c-64e3-50da-506e34bccb11" testName="Trivozhno.Tests.InfrastructureTests.RetrievalFindsFifteenParaphrasesAndRejectsFiveUnrelatedQueries" computerName="localhost" duration="00:00:00.2883472" startTime="2026-09-12T22:24:36.7391521+00:00" endTime="2026-09-12T22:24:37.0278428+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="72c484f0-1143-4f94-a18e-ecaa7a20be55">
+      <Output>
+        <StdOut>query 1: expected page 1; returned 1
+query 2: expected page 2; returned 2
+query 3: expected page 3; returned 3
+query 4: expected page 4; returned 4
+query 5: expected page 5; returned 5
+query 6: expected page 6; returned 6
+query 7: expected page 7; returned 7
+query 8: expected page 8; returned 8
+query 9: expected page 9; returned 9
+query 10: expected page 10; returned 10
+query 11: expected page 11; returned 11
+query 12: expected page 12; returned 12
+query 13: expected page 13; returned 13
+query 14: expected page 14; returned 14
+query 15: expected page 15; returned 15</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="75acc402-a134-469b-95c3-74fcce28a4c2" testId="f9560b3f-f9c4-1a2b-1e09-f76b3aad37f2" testName="Trivozhno.Tests.BehaviorTests.DisabledMoodModuleDoesNotBreakChatAndConfessions" computerName="localhost" duration="00:00:00.6033959" startTime="2026-09-12T22:24:26.6671200+00:00" endTime="2026-09-12T22:24:27.2729832+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="75acc402-a134-469b-95c3-74fcce28a4c2" />
+    <UnitTestResult executionId="cfc00f76-ff86-4bc6-8eb7-314a0e67946b" testId="34d103ea-739e-66c2-7844-2ecc01b785ef" testName="Trivozhno.Tests.InfrastructureTests.GroqRetries429AndTemporaryServerFailureWithinBudget" computerName="localhost" duration="00:00:01.3151981" startTime="2026-09-12T22:24:38.3598835+00:00" endTime="2026-09-12T22:24:39.6747880+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cfc00f76-ff86-4bc6-8eb7-314a0e67946b" />
+    <UnitTestResult executionId="c44da755-9716-4ee9-b1db-60d5013bf405" testId="45fdb0cb-d72a-7ebe-699d-2fbd16afb826" testName="Trivozhno.Tests.BehaviorTests.MultipleMoodsAndLongNoteAreSavedAndHistoryIsLossless" computerName="localhost" duration="00:00:01.1551906" startTime="2026-09-12T22:24:33.8030634+00:00" endTime="2026-09-12T22:24:34.9585870+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c44da755-9716-4ee9-b1db-60d5013bf405" />
+    <UnitTestResult executionId="5135c18c-dd3a-44da-ba6d-25f8b34f54a9" testId="f11cd381-bd37-f0e8-5553-cf3c0db04d1a" testName="Trivozhno.Tests.BehaviorTests.KnownRefusalCanRetryOnlyFailedPart" computerName="localhost" duration="00:00:01.0615225" startTime="2026-09-12T22:24:25.6049628+00:00" endTime="2026-09-12T22:24:26.6668169+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5135c18c-dd3a-44da-ba6d-25f8b34f54a9" />
+    <UnitTestResult executionId="5ba2f9a1-945b-4db2-8825-0fa20676b0e1" testId="cee3b6e0-f4a2-d922-19e6-c2418106bc8c" testName="Trivozhno.Tests.CoreTests.ReasoningProfilesAreSeparateAndInternalTextIsRemoved" computerName="localhost" duration="00:00:00.0033036" startTime="2026-09-12T22:24:21.6227008+00:00" endTime="2026-09-12T22:24:21.6259385+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5ba2f9a1-945b-4db2-8825-0fa20676b0e1" />
+    <UnitTestResult executionId="fa29d22d-d91a-43c6-863a-d79e0bcd2de1" testId="231a7dbe-795b-8fb0-ed82-5903d800e36c" testName="Trivozhno.Tests.InfrastructureTests.HistoryHasStablePagesAndOlderPeriods" computerName="localhost" duration="00:00:00.7176037" startTime="2026-09-12T22:24:36.0210814+00:00" endTime="2026-09-12T22:24:36.7389048+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fa29d22d-d91a-43c6-863a-d79e0bcd2de1" />
+    <UnitTestResult executionId="a2fe55b8-73fe-4c9e-81b5-24de2288f7b2" testId="4bfd8bf2-e3ea-cc39-01c8-a7c9cc958880" testName="Trivozhno.Tests.CoreTests.SplittingIsLosslessAndUnicodeSafe(pattern: &quot;\ud83d\udc68‍\ud83d\udc69‍\ud83d\udc67‍\ud83d\udc66 \ud83c\uddfa\ud83c\udde6 е́ \ud83d\ude00&quot;, maximum: 15)" computerName="localhost" duration="00:00:00.0026266" startTime="2026-09-12T22:24:21.6137418+00:00" endTime="2026-09-12T22:24:21.6163224+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a2fe55b8-73fe-4c9e-81b5-24de2288f7b2" />
+    <UnitTestResult executionId="e6a7c16b-07ac-4fe4-b37a-ac878113d5be" testId="4f3bc559-d88f-df70-4968-5318fc9c4d28" testName="Trivozhno.Tests.CoreTests.ReminderUsesCalendarDaysAcrossDst(before: &quot;2026-03-28T07:00:00Z&quot;, expected: &quot;2026-03-29T06:00:00Z&quot;)" computerName="localhost" duration="00:00:00.0002019" startTime="2026-09-12T22:24:21.6625293+00:00" endTime="2026-09-12T22:24:21.6625894+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e6a7c16b-07ac-4fe4-b37a-ac878113d5be" />
+    <UnitTestResult executionId="f10e0664-9207-473b-9140-258347e87123" testId="4402e6da-7ba8-126a-fcc4-364b493d282a" testName="Trivozhno.Tests.CoreTests.ReminderFirstOccurrenceIsNextFutureTimeAndNoBacklog" computerName="localhost" duration="00:00:00.0079882" startTime="2026-09-12T22:24:21.5370227+00:00" endTime="2026-09-12T22:24:21.5527669+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f10e0664-9207-473b-9140-258347e87123" />
+    <UnitTestResult executionId="965ffe62-956a-4f83-82c1-8dca684e1eca" testId="3615cd6c-082b-209f-c4fe-0ff386a68d7e" testName="Trivozhno.Tests.BehaviorTests.FailureKeepsUnansweredUserTextWithoutFakeAiPair" computerName="localhost" duration="00:00:00.3053666" startTime="2026-09-12T22:24:31.7400339+00:00" endTime="2026-09-12T22:24:32.0442168+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="965ffe62-956a-4f83-82c1-8dca684e1eca" />
+    <UnitTestResult executionId="bf0d25b2-5b95-4254-86b0-5d103b600a4f" testId="e28d254e-0cfe-c901-04aa-8a2fdf6dcf9e" testName="Trivozhno.Tests.CoreTests.ReminderUsesCalendarDaysAcrossDst(before: &quot;2026-10-24T06:00:00Z&quot;, expected: &quot;2026-10-25T07:00:00Z&quot;)" computerName="localhost" duration="00:00:00.0002106" startTime="2026-09-12T22:24:21.6324368+00:00" endTime="2026-09-12T22:24:21.6325906+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="bf0d25b2-5b95-4254-86b0-5d103b600a4f" />
+    <UnitTestResult executionId="a0a9117e-471c-4ec1-b291-13618ae5dbc7" testId="8e7f083e-d3cf-6742-53ae-4e5ab31521f6" testName="Trivozhno.Tests.BehaviorTests.FullDeletionRemovesOwnedDataWithoutCreatingProfileOrTouchingChannel" computerName="localhost" duration="00:00:00.8730892" startTime="2026-09-12T22:24:24.7313321+00:00" endTime="2026-09-12T22:24:25.6046996+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a0a9117e-471c-4ec1-b291-13618ae5dbc7" />
+    <UnitTestResult executionId="cf170975-daeb-4b5f-927a-0cd6fe5b4242" testId="de3b4b05-e03e-7c61-005f-f788d6283165" testName="Trivozhno.Tests.BehaviorTests.ExitKeepsMemoryAndSuppressesLateAnswer" computerName="localhost" duration="00:00:00.3916384" startTime="2026-09-12T22:24:32.4972031+00:00" endTime="2026-09-12T22:24:32.8893383+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cf170975-daeb-4b5f-927a-0cd6fe5b4242" />
+    <UnitTestResult executionId="37b91404-02f8-4aa9-ae5d-2c66988c506f" testId="a38ece8f-15ea-e23e-b1d6-7ef39aafcda5" testName="Trivozhno.Tests.CoreTests.SplittingIsLosslessAndUnicodeSafe(pattern: &quot;абвгдеєжзиіїйклмнопрстуфхцчшщьюя&quot;, maximum: 11)" computerName="localhost" duration="00:00:00.0060305" startTime="2026-09-12T22:24:21.6164736+00:00" endTime="2026-09-12T22:24:21.6225495+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="37b91404-02f8-4aa9-ae5d-2c66988c506f" />
+    <UnitTestResult executionId="681368a5-8c09-4240-aed6-8a2a4b2b18a9" testId="57554c6e-54bb-3663-2f96-cdae6c19bd02" testName="Trivozhno.Tests.BehaviorTests.SummaryFailureKeepsMessagesAndSuccessfulSummaryRetainsRecentTen" computerName="localhost" duration="00:00:01.2481211" startTime="2026-09-12T22:24:27.2732763+00:00" endTime="2026-09-12T22:24:28.5238332+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="681368a5-8c09-4240-aed6-8a2a4b2b18a9" />
+    <UnitTestResult executionId="c0921a50-b0f2-4df1-af48-1844bec8f33c" testId="5c1ea872-6819-0b04-fb99-5803babd7f4e" testName="Trivozhno.Tests.InfrastructureTests.PdfImportExtractsTextReportsBlankPagesAndDeduplicatesRenamedFile" computerName="localhost" duration="00:00:00.5653369" startTime="2026-09-12T22:24:37.2517405+00:00" endTime="2026-09-12T22:24:37.8174259+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c0921a50-b0f2-4df1-af48-1844bec8f33c" />
+    <UnitTestResult executionId="5375c00d-5981-4920-b21f-89602efadcf9" testId="3add6e30-e7e1-4834-a9db-e4201efcf45a" testName="Trivozhno.Tests.InfrastructureTests.Telegram429IsDeferredAndBlockedUserDisablesReminder" computerName="localhost" duration="00:00:00.2860304" startTime="2026-09-12T22:24:37.8178292+00:00" endTime="2026-09-12T22:24:38.1040611+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5375c00d-5981-4920-b21f-89602efadcf9" />
+    <UnitTestResult executionId="7811b5e0-a9dc-46d4-bd1d-b5002550d7e2" testId="8e2b556b-7393-66de-d92f-afbcbb68a069" testName="Trivozhno.Tests.CoreTests.SplittingIsLosslessAndUnicodeSafe(pattern: &quot;звичайний текст &amp; &lt;tag&gt; _test_&quot;, maximum: 4000)" computerName="localhost" duration="00:00:00.0141319" startTime="2026-09-12T22:24:21.5995759+00:00" endTime="2026-09-12T22:24:21.6136382+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7811b5e0-a9dc-46d4-bd1d-b5002550d7e2" />
+    <UnitTestResult executionId="ef78ac2a-0b34-47b2-8002-178761ab7947" testId="54a3353c-65e5-9230-545a-91eec359ba65" testName="Trivozhno.Tests.BehaviorTests.MenuAndSkipAskBeforeDiscardingDraft" computerName="localhost" duration="00:00:00.5238844" startTime="2026-09-12T22:24:30.4329539+00:00" endTime="2026-09-12T22:24:30.9578850+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ef78ac2a-0b34-47b2-8002-178761ab7947" />
+    <UnitTestResult executionId="8ef6f088-7033-4380-8741-dc208fd2c661" testId="eeed4be1-bdfa-17fb-e208-f263fe096546" testName="Trivozhno.Tests.CoreTests.URIParsesEncodedCredentialsAndSslWithoutLeaking" computerName="localhost" duration="00:00:00.0181491" startTime="2026-09-12T22:24:21.5819503+00:00" endTime="2026-09-12T22:24:21.5994256+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8ef6f088-7033-4380-8741-dc208fd2c661" />
+    <UnitTestResult executionId="fb982729-f044-4758-b870-a413709249d8" testId="fe7408d9-92d1-8761-7fdc-8e8fc647bc0a" testName="Trivozhno.Tests.BehaviorTests.MenuDoesNotInvokeAiAndUnsupportedInputKeepsDraft" computerName="localhost" duration="00:00:00.6696383" startTime="2026-09-12T22:24:34.9589551+00:00" endTime="2026-09-12T22:24:35.6288804+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fb982729-f044-4758-b870-a413709249d8" />
+    <UnitTestResult executionId="cb260d2b-7517-45c8-9a50-a4f47070534d" testId="f11df07c-e1ba-ede1-1dae-b4a85b6d47ee" testName="Trivozhno.Tests.BehaviorTests.UnknownDeliveryRequiresManualResolutionAndSurvivesRestart" computerName="localhost" duration="00:00:01.0474737" startTime="2026-09-12T22:24:28.5242319+00:00" endTime="2026-09-12T22:24:29.5717341+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cb260d2b-7517-45c8-9a50-a4f47070534d" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.ClearDuringAiDoesNotRestoreDeletedMemory" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="00d2ad59-855d-d745-1c90-281110bb8426">
+      <Execution id="d1d8c13b-5c50-4e72-adf9-911b688c2832" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="ClearDuringAiDoesNotRestoreDeletedMemory" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.ReminderOnlyOnceAndNoBacklogOrActiveInputInterruptions" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="35993341-704a-d4c9-ccf7-05d6ab220d9c">
+      <Execution id="6b11a06f-bf6d-4908-8fcb-9fe58ae5398c" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="ReminderOnlyOnceAndNoBacklogOrActiveInputInterruptions" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.InfrastructureTests.ThousandAcceptedUpdatesReachTerminalStatusWithIsolatedContexts" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="a45f64e1-66bb-2ca2-3118-574dfa46487b">
+      <Execution id="9a8d46ae-fd25-4cbf-bf68-df0bb35669e0" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.InfrastructureTests" name="ThousandAcceptedUpdatesReachTerminalStatusWithIsolatedContexts" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.CoreTests.ReminderUsesCalendarDaysAcrossDst(before: &quot;2026-03-28T07:00:00Z&quot;, expected: &quot;2026-03-29T06:00:00Z&quot;)" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="4f3bc559-d88f-df70-4968-5318fc9c4d28">
+      <Execution id="e6a7c16b-07ac-4fe4-b37a-ac878113d5be" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.CoreTests" name="ReminderUsesCalendarDaysAcrossDst" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.ExitKeepsMemoryAndSuppressesLateAnswer" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="de3b4b05-e03e-7c61-005f-f788d6283165">
+      <Execution id="cf170975-daeb-4b5f-927a-0cd6fe5b4242" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="ExitKeepsMemoryAndSuppressesLateAnswer" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.InfrastructureTests.DuplicateInboxIsIdempotentAndPoisonDoesNotBlockAnotherPerson" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="4fbc4833-5d2e-6660-6ee6-cce38a9dc4f6">
+      <Execution id="9f0d8e9b-88a8-4dc5-a27f-ff893a76c166" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.InfrastructureTests" name="DuplicateInboxIsIdempotentAndPoisonDoesNotBlockAnotherPerson" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.CoreTests.LexiconUsesExplicitFormsRatherThanFiveCharacterPrefixes" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="d69664c7-78c6-587f-2f2a-574ea75c5587">
+      <Execution id="8c25809c-40cc-453f-a8ea-ae76f5995092" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.CoreTests" name="LexiconUsesExplicitFormsRatherThanFiveCharacterPrefixes" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.InfrastructureTests.GroqRetries429AndTemporaryServerFailureWithinBudget" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="34d103ea-739e-66c2-7844-2ecc01b785ef">
+      <Execution id="cfc00f76-ff86-4bc6-8eb7-314a0e67946b" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.InfrastructureTests" name="GroqRetries429AndTemporaryServerFailureWithinBudget" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.MenuDoesNotInvokeAiAndUnsupportedInputKeepsDraft" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="fe7408d9-92d1-8761-7fdc-8e8fc647bc0a">
+      <Execution id="fb982729-f044-4758-b870-a413709249d8" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="MenuDoesNotInvokeAiAndUnsupportedInputKeepsDraft" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.MoodContextRequiresConsentAndIsExcludedFromNewRequestsAfterDisable" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="b2916307-c2a7-8e09-83f6-a4acc0a9f0ef">
+      <Execution id="e3925b83-049e-4ddd-b3a0-fe4f210d0fbe" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="MoodContextRequiresConsentAndIsExcludedFromNewRequestsAfterDisable" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.MenuAndSkipAskBeforeDiscardingDraft" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="54a3353c-65e5-9230-545a-91eec359ba65">
+      <Execution id="ef78ac2a-0b34-47b2-8002-178761ab7947" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="MenuAndSkipAskBeforeDiscardingDraft" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.InfrastructureTests.HistoryHasStablePagesAndOlderPeriods" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="231a7dbe-795b-8fb0-ed82-5903d800e36c">
+      <Execution id="fa29d22d-d91a-43c6-863a-d79e0bcd2de1" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.InfrastructureTests" name="HistoryHasStablePagesAndOlderPeriods" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.DisabledMoodModuleDoesNotBreakChatAndConfessions" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="f9560b3f-f9c4-1a2b-1e09-f76b3aad37f2">
+      <Execution id="75acc402-a134-469b-95c3-74fcce28a4c2" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="DisabledMoodModuleDoesNotBreakChatAndConfessions" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.CoreTests.SplittingIsLosslessAndUnicodeSafe(pattern: &quot;звичайний текст &amp; &lt;tag&gt; _test_&quot;, maximum: 4000)" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="8e2b556b-7393-66de-d92f-afbcbb68a069">
+      <Execution id="7811b5e0-a9dc-46d4-bd1d-b5002550d7e2" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.CoreTests" name="SplittingIsLosslessAndUnicodeSafe" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.InfrastructureTests.PdfImportExtractsTextReportsBlankPagesAndDeduplicatesRenamedFile" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="5c1ea872-6819-0b04-fb99-5803babd7f4e">
+      <Execution id="c0921a50-b0f2-4df1-af48-1844bec8f33c" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.InfrastructureTests" name="PdfImportExtractsTextReportsBlankPagesAndDeduplicatesRenamedFile" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.SummaryFailureKeepsMessagesAndSuccessfulSummaryRetainsRecentTen" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="57554c6e-54bb-3663-2f96-cdae6c19bd02">
+      <Execution id="681368a5-8c09-4240-aed6-8a2a4b2b18a9" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="SummaryFailureKeepsMessagesAndSuccessfulSummaryRetainsRecentTen" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.KnownRefusalCanRetryOnlyFailedPart" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="f11cd381-bd37-f0e8-5553-cf3c0db04d1a">
+      <Execution id="5135c18c-dd3a-44da-ba6d-25f8b34f54a9" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="KnownRefusalCanRetryOnlyFailedPart" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.InfrastructureTests.GroqFallbackUsesOwnProfileAnd401DoesNotRetry" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="b97650e5-f68c-3123-2f91-c8aafec28cb0">
+      <Execution id="c469d58b-fd85-4233-b127-c84b012e1be5" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.InfrastructureTests" name="GroqFallbackUsesOwnProfileAnd401DoesNotRetry" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.FailureKeepsUnansweredUserTextWithoutFakeAiPair" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="3615cd6c-082b-209f-c4fe-0ff386a68d7e">
+      <Execution id="965ffe62-956a-4f83-82c1-8dca684e1eca" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="FailureKeepsUnansweredUserTextWithoutFakeAiPair" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.InfrastructureTests.Telegram429IsDeferredAndBlockedUserDisablesReminder" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="3add6e30-e7e1-4834-a9db-e4201efcf45a">
+      <Execution id="5375c00d-5981-4920-b21f-89602efadcf9" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.InfrastructureTests" name="Telegram429IsDeferredAndBlockedUserDisablesReminder" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.CoreTests.SplittingIsLosslessAndUnicodeSafe(pattern: &quot;\ud83d\udc68‍\ud83d\udc69‍\ud83d\udc67‍\ud83d\udc66 \ud83c\uddfa\ud83c\udde6 е́ \ud83d\ude00&quot;, maximum: 15)" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="4bfd8bf2-e3ea-cc39-01c8-a7c9cc958880">
+      <Execution id="a2fe55b8-73fe-4c9e-81b5-24de2288f7b2" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.CoreTests" name="SplittingIsLosslessAndUnicodeSafe" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.RapidMessagesAreAnsweredInOrderWithPreviousAnswerAndNoCrossUserContext" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="3a6c6717-fa60-89ea-07cc-c9e2c8d35691">
+      <Execution id="45acfcb4-3d57-4f5d-b26b-e657dd5770f2" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="RapidMessagesAreAnsweredInOrderWithPreviousAnswerAndNoCrossUserContext" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.InfrastructureTests.RestoredPendingAiAndDraftAreUsable" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="a122c6fb-64ab-00f2-d04e-b60a2a6cde9d">
+      <Execution id="56158e55-8ef1-4807-b9fd-04044ab5e253" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.InfrastructureTests" name="RestoredPendingAiAndDraftAreUsable" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.MultipleMoodsAndLongNoteAreSavedAndHistoryIsLossless" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="45fdb0cb-d72a-7ebe-699d-2fbd16afb826">
+      <Execution id="c44da755-9716-4ee9-b1db-60d5013bf405" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="MultipleMoodsAndLongNoteAreSavedAndHistoryIsLossless" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.InfrastructureTests.RetrievalFindsFifteenParaphrasesAndRejectsFiveUnrelatedQueries" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="045e6336-bb5c-64e3-50da-506e34bccb11">
+      <Execution id="72c484f0-1143-4f94-a18e-ecaa7a20be55" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.InfrastructureTests" name="RetrievalFindsFifteenParaphrasesAndRejectsFiveUnrelatedQueries" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.CoreTests.ReminderFirstOccurrenceIsNextFutureTimeAndNoBacklog" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="4402e6da-7ba8-126a-fcc4-364b493d282a">
+      <Execution id="f10e0664-9207-473b-9140-258347e87123" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.CoreTests" name="ReminderFirstOccurrenceIsNextFutureTimeAndNoBacklog" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.ConfessionEditInvalidatesOldButtonsAndDoubleSendDoesNotDuplicate" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="4f540cd5-5660-b1ae-369d-29b25c60e332">
+      <Execution id="d3d78655-8223-4a41-aa1e-3a3368c12191" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="ConfessionEditInvalidatesOldButtonsAndDoubleSendDoesNotDuplicate" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.CoreTests.URIParsesEncodedCredentialsAndSslWithoutLeaking" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="eeed4be1-bdfa-17fb-e208-f263fe096546">
+      <Execution id="8ef6f088-7033-4380-8741-dc208fd2c661" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.CoreTests" name="URIParsesEncodedCredentialsAndSslWithoutLeaking" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.CoreTests.ChunksHavePageMetadataAndBoundedOverlap" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="8b70130f-fc3b-b1a5-2aaa-52975786acd2">
+      <Execution id="5f02a72a-263d-48a5-bacc-5dafe2b597b7" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.CoreTests" name="ChunksHavePageMetadataAndBoundedOverlap" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.CoreTests.ReasoningProfilesAreSeparateAndInternalTextIsRemoved" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="cee3b6e0-f4a2-d922-19e6-c2418106bc8c">
+      <Execution id="5ba2f9a1-945b-4db2-8825-0fa20676b0e1" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.CoreTests" name="ReasoningProfilesAreSeparateAndInternalTextIsRemoved" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.FullDeletionRemovesOwnedDataWithoutCreatingProfileOrTouchingChannel" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="8e7f083e-d3cf-6742-53ae-4e5ab31521f6">
+      <Execution id="a0a9117e-471c-4ec1-b291-13618ae5dbc7" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="FullDeletionRemovesOwnedDataWithoutCreatingProfileOrTouchingChannel" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.BehaviorTests.UnknownDeliveryRequiresManualResolutionAndSurvivesRestart" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="f11df07c-e1ba-ede1-1dae-b4a85b6d47ee">
+      <Execution id="cb260d2b-7517-45c8-9a50-a4f47070534d" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.BehaviorTests" name="UnknownDeliveryRequiresManualResolutionAndSurvivesRestart" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.CoreTests.SplittingIsLosslessAndUnicodeSafe(pattern: &quot;абвгдеєжзиіїйклмнопрстуфхцчшщьюя&quot;, maximum: 11)" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="a38ece8f-15ea-e23e-b1d6-7ef39aafcda5">
+      <Execution id="37b91404-02f8-4aa9-ae5d-2c66988c506f" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.CoreTests" name="SplittingIsLosslessAndUnicodeSafe" />
+    </UnitTest>
+    <UnitTest name="Trivozhno.Tests.CoreTests.ReminderUsesCalendarDaysAcrossDst(before: &quot;2026-10-24T06:00:00Z&quot;, expected: &quot;2026-10-25T07:00:00Z&quot;)" storage="/workspace/scratch/e1a552521de7/trivozhno/tests/bot.tests/bin/debug/net10.0/bot.tests.dll" id="e28d254e-0cfe-c901-04aa-8a2fdf6dcf9e">
+      <Execution id="bf0d25b2-5b95-4254-86b0-5d103b600a4f" />
+      <TestMethod codeBase="/workspace/scratch/e1a552521de7/trivozhno/tests/Bot.Tests/bin/Debug/net10.0/Bot.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Trivozhno.Tests.CoreTests" name="ReminderUsesCalendarDaysAcrossDst" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="d69664c7-78c6-587f-2f2a-574ea75c5587" executionId="8c25809c-40cc-453f-a8ea-ae76f5995092" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="35993341-704a-d4c9-ccf7-05d6ab220d9c" executionId="6b11a06f-bf6d-4908-8fcb-9fe58ae5398c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a122c6fb-64ab-00f2-d04e-b60a2a6cde9d" executionId="56158e55-8ef1-4807-b9fd-04044ab5e253" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8b70130f-fc3b-b1a5-2aaa-52975786acd2" executionId="5f02a72a-263d-48a5-bacc-5dafe2b597b7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b97650e5-f68c-3123-2f91-c8aafec28cb0" executionId="c469d58b-fd85-4233-b127-c84b012e1be5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3a6c6717-fa60-89ea-07cc-c9e2c8d35691" executionId="45acfcb4-3d57-4f5d-b26b-e657dd5770f2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4fbc4833-5d2e-6660-6ee6-cce38a9dc4f6" executionId="9f0d8e9b-88a8-4dc5-a27f-ff893a76c166" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a45f64e1-66bb-2ca2-3118-574dfa46487b" executionId="9a8d46ae-fd25-4cbf-bf68-df0bb35669e0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b2916307-c2a7-8e09-83f6-a4acc0a9f0ef" executionId="e3925b83-049e-4ddd-b3a0-fe4f210d0fbe" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="00d2ad59-855d-d745-1c90-281110bb8426" executionId="d1d8c13b-5c50-4e72-adf9-911b688c2832" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4f540cd5-5660-b1ae-369d-29b25c60e332" executionId="d3d78655-8223-4a41-aa1e-3a3368c12191" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="045e6336-bb5c-64e3-50da-506e34bccb11" executionId="72c484f0-1143-4f94-a18e-ecaa7a20be55" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f9560b3f-f9c4-1a2b-1e09-f76b3aad37f2" executionId="75acc402-a134-469b-95c3-74fcce28a4c2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="34d103ea-739e-66c2-7844-2ecc01b785ef" executionId="cfc00f76-ff86-4bc6-8eb7-314a0e67946b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="45fdb0cb-d72a-7ebe-699d-2fbd16afb826" executionId="c44da755-9716-4ee9-b1db-60d5013bf405" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f11cd381-bd37-f0e8-5553-cf3c0db04d1a" executionId="5135c18c-dd3a-44da-ba6d-25f8b34f54a9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="cee3b6e0-f4a2-d922-19e6-c2418106bc8c" executionId="5ba2f9a1-945b-4db2-8825-0fa20676b0e1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="231a7dbe-795b-8fb0-ed82-5903d800e36c" executionId="fa29d22d-d91a-43c6-863a-d79e0bcd2de1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4bfd8bf2-e3ea-cc39-01c8-a7c9cc958880" executionId="a2fe55b8-73fe-4c9e-81b5-24de2288f7b2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4f3bc559-d88f-df70-4968-5318fc9c4d28" executionId="e6a7c16b-07ac-4fe4-b37a-ac878113d5be" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4402e6da-7ba8-126a-fcc4-364b493d282a" executionId="f10e0664-9207-473b-9140-258347e87123" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3615cd6c-082b-209f-c4fe-0ff386a68d7e" executionId="965ffe62-956a-4f83-82c1-8dca684e1eca" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e28d254e-0cfe-c901-04aa-8a2fdf6dcf9e" executionId="bf0d25b2-5b95-4254-86b0-5d103b600a4f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8e7f083e-d3cf-6742-53ae-4e5ab31521f6" executionId="a0a9117e-471c-4ec1-b291-13618ae5dbc7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="de3b4b05-e03e-7c61-005f-f788d6283165" executionId="cf170975-daeb-4b5f-927a-0cd6fe5b4242" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a38ece8f-15ea-e23e-b1d6-7ef39aafcda5" executionId="37b91404-02f8-4aa9-ae5d-2c66988c506f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="57554c6e-54bb-3663-2f96-cdae6c19bd02" executionId="681368a5-8c09-4240-aed6-8a2a4b2b18a9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5c1ea872-6819-0b04-fb99-5803babd7f4e" executionId="c0921a50-b0f2-4df1-af48-1844bec8f33c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3add6e30-e7e1-4834-a9db-e4201efcf45a" executionId="5375c00d-5981-4920-b21f-89602efadcf9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8e2b556b-7393-66de-d92f-afbcbb68a069" executionId="7811b5e0-a9dc-46d4-bd1d-b5002550d7e2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="54a3353c-65e5-9230-545a-91eec359ba65" executionId="ef78ac2a-0b34-47b2-8002-178761ab7947" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="eeed4be1-bdfa-17fb-e208-f263fe096546" executionId="8ef6f088-7033-4380-8741-dc208fd2c661" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="fe7408d9-92d1-8761-7fdc-8e8fc647bc0a" executionId="fb982729-f044-4758-b870-a413709249d8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f11df07c-e1ba-ede1-1dae-b4a85b6d47ee" executionId="cb260d2b-7517-45c8-9a50-a4f47070534d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="34" executed="33" passed="33" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)
+[xUnit.net 00:00:00.09]   Discovering: Bot.Tests
+[xUnit.net 00:00:00.14]   Discovered:  Bot.Tests
+[xUnit.net 00:00:00.17]   Starting:    Bot.Tests
+[xUnit.net 00:00:16.76]       Set RUN_LOAD_TEST=1 and TEST_DATABASE_URL.
+Test 'Trivozhno.Tests.InfrastructureTests.ThousandAcceptedUpdatesReachTerminalStatusWithIsolatedContexts' was skipped in the test run.
+[xUnit.net 00:00:18.33]   Finished:    Bot.Tests
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="localhost" outcome="Warning" timestamp="2026-09-12T22:24:38.1063205+00:00">
+        <Text>[xUnit.net 00:00:16.76]     Trivozhno.Tests.InfrastructureTests.ThousandAcceptedUpdatesReachTerminalStatusWithIsolatedContexts [SKIP]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

@@ -1,0 +1,12 @@
+**/bin
+**/obj
+**/TestResults
+.git
+.dotnet
+.env
+.env.*
+data
+*.pdf
+*.log
+*.dump
+*.backup

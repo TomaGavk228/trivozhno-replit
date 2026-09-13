@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+**/TestResults/
+.dotnet/
+.env
+.env.*
+!.env.example
+data/books/*
+!data/books/README.md
+*.pdf
+*.log
+*.dump
+*.backup
