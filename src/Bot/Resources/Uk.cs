@@ -14,6 +14,10 @@ public sealed class Uk
         strings = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(Path.Combine(root, "uk.json")))!;
         aliases = JsonSerializer.Deserialize<Dictionary<string, string[]>>(File.ReadAllText(Path.Combine(root, "button-aliases.json")))!;
         ChatPrompt = File.ReadAllText(Path.Combine(root, "Prompts", "chat-v1.txt"));
+        Console.WriteLine(
+        $"[PROMPT] File={Path.Combine(root, "Prompts", "chat-v1.txt")} " +
+        $"Chars={ChatPrompt.Length} " +
+        $"SHA256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ChatPrompt)))}");
         SummaryPrompt = File.ReadAllText(Path.Combine(root, "Prompts", "summary-v1.txt"));
     }
     public string this[string key] => strings[key];
