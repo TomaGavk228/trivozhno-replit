@@ -40,6 +40,7 @@ public sealed class BookImporter(BotDb db, IClock clock, BotOptions options)
     }
     public static string Clean(string text, HashSet<string> edges)
     {
+        text = text.Replace("\0", "");
         var lines = text.Replace("\r\n", "\n").Split('\n');
         text = string.Join('\n', lines.Where((line, i) => !(i < 2 || i >= lines.Length - 2) || !edges.Contains(line.Trim())));
         text = Regex.Replace(text, @"(?<=\p{L})-\s*\n\s*(?=\p{L})", "");
