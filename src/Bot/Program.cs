@@ -30,6 +30,19 @@ catch (Exception e)
     // Messages from network/SQL exceptions may contain secrets; only our startup validation is safe.
     Console.Error.WriteLine(e is InvalidOperationException && (e.Message.StartsWith("Set ") || e.Message.StartsWith("DATABASE_URL") || e.Message.StartsWith("Invalid "))
         ? e.Message : $"Startup failed ({e.GetType().Name}). Check README troubleshooting. Credentials and content are hidden.");
+            for (Exception? error = e; error != null; error = error.InnerException)
+{
+    Console.Error.WriteLine($"Error type: {error.GetType().Name}");
+
+    if (error is Npgsql.PostgresException pg)
+    {
+        Console.Error.WriteLine(
+            $"SQLSTATE: {pg.SqlState}\n" +
+            $"Table: {pg.TableName}\n" +
+            $"Column: {pg.ColumnName}\n" +
+            $"Constraint: {pg.ConstraintName}");
+    }
+}
     Environment.ExitCode = 1;
 }
 
