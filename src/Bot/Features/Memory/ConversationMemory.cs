@@ -23,14 +23,18 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
         const int chatOutputReserve = 700;
         var budget = Math.Min(options.InputBudget, options.TokensPerMinute - chatOutputReserve);
         var core = new AiMessage("system", uk.ChatPrompt);
-        var style = new AiMessage("system", "Стильові seed-діалоги. Це приклади манери, а не історія користувача:\n\n" + uk.ChatSeedChats);
+        var styleText = SelectStyleSeeds(uk.ChatSeedChats, current.Text, 1400, 6);
         var userMessage = new AiMessage("user", current.Text);
         var required = new List<AiMessage> { core, userMessage };
         if (TokenEstimate.Count(required) > budget) throw new ContextTooLargeException();
 
         var messages = new List<AiMessage> { core };
-        if (TokenEstimate.Count(messages.Append(style).Append(userMessage)) <= budget)
-            messages.Add(style);
+        if (!string.IsNullOrWhiteSpace(styleText))
+        {
+            var style = new AiMessage("system", "Стильові seed-діалоги. Це приклади манери, а не історія користувача:\n\n" + styleText);
+            if (TokenEstimate.Count(messages.Append(style).Append(userMessage)) <= budget)
+                messages.Add(style);
+        }
 
         var summary = await db.Summaries.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == user.Id, ct);
         if (summary is not null && TokenEstimate.Count(summary.Text) <= 650)
@@ -98,6 +102,40 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
         while (messages.Count > 1 && TokenEstimate.Count(messages.Append(userMessage)) > budget) messages.RemoveAt(1);
         messages.Add(userMessage);
         return new(messages, hasMood, JsonSerializer.Serialize(selected.Select(x => new { x.Title, x.PageStart, x.PageEnd, x.ChunkId })));
+    }
+
+    public static string SelectStyleSeeds(string bank, string query, int maxTokens = 1400, int maxBlocks = 6)
+    {
+        if (string.IsNullOrWhiteSpace(bank) || maxTokens <= 0 || maxBlocks <= 0) return "";
+
+        var blocks = Regex.Split(bank, @"\r?\n\s*---\s*\r?\n", RegexOptions.None, TimeSpan.FromSeconds(1))
+            .Select(x => x.Trim())
+            .Where(x => x.StartsWith("Людина:", StringComparison.OrdinalIgnoreCase) &&
+                        x.Contains("Співрозмовник:", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (blocks.Length == 0) return "";
+
+        var queryTerms = Lexicon.Terms(query).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ranked = blocks.Select((block, index) => new
+            {
+                Block = block,
+                Index = index,
+                Score = Lexicon.Terms(block).Distinct(StringComparer.OrdinalIgnoreCase).Count(queryTerms.Contains)
+            })
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => Math.Abs(x.Block.Length - 420))
+            .ThenBy(x => x.Index);
+
+        var chosen = new List<string>();
+        var usedTokens = 0;
+        foreach (var item in ranked)
+        {
+            var cost = TokenEstimate.Count(item.Block);
+            if (chosen.Count >= maxBlocks || usedTokens + cost > maxTokens) continue;
+            chosen.Add(item.Block);
+            usedTokens += cost;
+        }
+        return string.Join("\n\n---\n\n", chosen);
     }
 
     public static bool ShouldUseKnowledge(string text)
