@@ -1,4 +1,3 @@
-using Trivozhno.Features.Dialogue;
 using System.Collections.Concurrent;
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
@@ -31,12 +30,6 @@ public sealed class FakeAi : IAiClient
     public TaskCompletionSource<bool> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource<AiResult>? Pause { get; set; }
     public bool Fail { get; set; }
-    public ConversationState ReplyState { get; set; } = new();
-    public async Task<AiResult> CompleteStructured(IReadOnlyList<AiMessage> messages, int outputTokens, CancellationToken ct)
-    {
-        var raw = await Complete(messages, false, ct);
-        return raw with { Text = DialogueJson.Write(new ConversationTurn(ReplyState, raw.Text)) };
-    }
     public async Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct)
     {
         Requests.Enqueue(messages.ToArray()); Entered.TrySetResult(true);
@@ -73,7 +66,7 @@ public sealed class TestRig : IAsyncDisposable
     public InboxProcessor Inbox => Services.GetRequiredService<InboxProcessor>();
     public AiProcessor Processor => Services.GetRequiredService<AiProcessor>();
     public OutboxProcessor Outbox => Services.GetRequiredService<OutboxProcessor>();
-    public async Task Init(bool mood = true, bool realClock = false, bool liveAi = false)
+    public async Task Init(bool mood = true, bool realClock = false)
     {
         connection = ConnectionStrings.Parse(Environment.GetEnvironmentVariable("TEST_DATABASE_URL")!);
         await using (var conn = new NpgsqlConnection(connection))
@@ -81,12 +74,12 @@ public sealed class TestRig : IAsyncDisposable
             await conn.OpenAsync(); await using var command = new NpgsqlCommand($"CREATE SCHEMA \"{Schema}\"", conn); await command.ExecuteNonQueryAsync();
         }
         var b = new NpgsqlConnectionStringBuilder(connection) { SearchPath = Schema, MaxPoolSize = 20 };
-        var config = new BotOptions { Database = b.ConnectionString, TelegramToken = "test-only", GroqKey = liveAi ? Environment.GetEnvironmentVariable("GROQ_API_KEY") ?? "" : "test-only", ChannelId = -100123,
+        var config = new BotOptions { Database = b.ConnectionString, TelegramToken = "test-only", GroqKey = "test-only", ChannelId = -100123,
             TelegramPerSecond = int.MaxValue, TelegramChatMilliseconds = 0, TelegramChannelMilliseconds = 0, Mood = mood, QueueWait = 3600 };
         var services = new ServiceCollection(); services.AddLogging(); services.AddBot(config);
         // Explicit SET also supports test wire-protocol servers that ignore startup SearchPath.
         services.AddDbContext<BotDb>(o => o.AddInterceptors(new TestSchemaInterceptor(Schema)));
-        services.AddSingleton<IClock>(realClock ? new SystemClock() : Clock); if (!liveAi) services.AddSingleton<IAiClient>(Ai); services.AddSingleton<ITelegramClient>(Telegram);
+        services.AddSingleton<IClock>(realClock ? new SystemClock() : Clock); services.AddSingleton<IAiClient>(Ai); services.AddSingleton<ITelegramClient>(Telegram);
         Services = services.BuildServiceProvider();
         await WithDb(async db => await db.Database.MigrateAsync());
     }

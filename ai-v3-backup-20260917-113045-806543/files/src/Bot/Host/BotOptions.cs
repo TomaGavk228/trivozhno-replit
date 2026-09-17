@@ -10,9 +10,6 @@ public sealed class BotOptions
     public long ChannelId { get; init; }
     public string Model { get; init; } = "openai/gpt-oss-120b";
     public string FallbackModel { get; init; } = "qwen/qwen3.6-27b";
-    public int ChatOutputTokens { get; init; } = 900;
-    public int ChatDetailTokens { get; init; } = 2200;
-    public int StateIdleHours { get; init; } = 6;
     public int AiConcurrency { get; init; } = 2;
     public int AiTimeout { get; init; } = 45;
     public int JobBudget { get; init; } = 100;
@@ -40,9 +37,6 @@ public sealed class BotOptions
         Database = c["DATABASE_URL"] ?? "", TelegramToken = c["TELEGRAM_BOT_TOKEN"] ?? "",
         GroqKey = c["GROQ_API_KEY"] ?? "", ChannelId = long.TryParse(c["CONFESSIONS_CHANNEL_ID"], out var id) ? id : 0,
         Model = c["GROQ_MODEL"] ?? "openai/gpt-oss-120b", FallbackModel = c["GROQ_FALLBACK_MODEL"] ?? "qwen/qwen3.6-27b",
-        ChatOutputTokens = Int(c, "AI_CHAT_OUTPUT_TOKENS", 900, 600, 4000),
-        ChatDetailTokens = Int(c, "AI_CHAT_DETAIL_TOKENS", 2200, 900, 8000),
-        StateIdleHours = Int(c, "AI_STATE_IDLE_HOURS", 6, 1, 48),
         AiConcurrency = Int(c, "AI_MAX_CONCURRENCY", 2, 1, 16), AiTimeout = Int(c, "AI_TIMEOUT_SECONDS", 45, 1, 120),
         JobBudget = Int(c, "AI_JOB_BUDGET_SECONDS", 100, 10, 300), QueueWait = Int(c, "AI_MAX_QUEUE_WAIT_SECONDS", 300, 10, 3600),
         RequestsPerMinute = Int(c, "GROQ_RPM", 25, 1, 100000), TokensPerMinute = Int(c, "GROQ_TPM", 8000, 2000, 10000000),

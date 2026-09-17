@@ -22,35 +22,6 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("Trivozhno.Features.Dialogue.ConversationStateRow", b =>
-                {
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<long>("AppliedThroughId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Json")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<long>("MemoryVersion")
-                        .HasColumnType("bigint");
-
-                    b.Property<bool>("MoodDerived")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("SessionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("UserId");
-
-                    b.ToTable("ConversationStates", (string)null);
-                });
-
             modelBuilder.Entity("Trivozhno.Infrastructure.Groq.ApiUsage", b =>
                 {
                     b.Property<long>("Id")
@@ -645,15 +616,6 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_Reminder_Interval", "\"IntervalDays\" BETWEEN 1 AND 3");
                         });
-                });
-
-            modelBuilder.Entity("Trivozhno.Features.Dialogue.ConversationStateRow", b =>
-                {
-                    b.HasOne("Trivozhno.Infrastructure.Persistence.BotUser", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Trivozhno.Infrastructure.Persistence.ChatMessage", b =>

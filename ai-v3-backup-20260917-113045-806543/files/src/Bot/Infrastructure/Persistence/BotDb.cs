@@ -1,4 +1,3 @@
-using Trivozhno.Features.Dialogue;
 using Microsoft.EntityFrameworkCore;
 
 namespace Trivozhno.Infrastructure.Persistence;
@@ -23,9 +22,6 @@ public sealed class BotDb(DbContextOptions<BotDb> options) : DbContext(options)
 
     protected override void OnModelCreating(ModelBuilder m)
     {
-        m.Entity<ConversationStateRow>().ToTable("ConversationStates");
-        m.Entity<ConversationStateRow>().HasKey(x => x.UserId);
-        Owned<ConversationStateRow>(m);
         m.Entity<BotUser>().HasIndex(x => x.TelegramId).IsUnique();
         m.Entity<BotUser>().Property(x => x.State).HasConversion<string>();
         m.Entity<BotUser>().Property(x => x.ReturnState).HasConversion<string>();

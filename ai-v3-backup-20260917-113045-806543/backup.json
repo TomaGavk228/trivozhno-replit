@@ -1,0 +1,140 @@
+[
+  {
+    "path": "src/Bot/Features/Dialogue/ConversationContextBuilder.cs",
+    "existed": false,
+    "beforeSha256": null,
+    "afterSha256": "c9b20350a06d514b659ba20e342a3e4ccdb20216c9f1ee5b8ee8e7fb9e26dbd3"
+  },
+  {
+    "path": "src/Bot/Features/Dialogue/ConversationMemoryReader.cs",
+    "existed": false,
+    "beforeSha256": null,
+    "afterSha256": "52b6f77c959327585c4b834708059d57548dd4668021d04741cb31437c387085"
+  },
+  {
+    "path": "src/Bot/Features/Dialogue/ConversationModel.cs",
+    "existed": false,
+    "beforeSha256": null,
+    "afterSha256": "fefe70d59c7fe3eeddf9754323a2c9bf98ae32d1709dc9bf848da51978ad38c8"
+  },
+  {
+    "path": "src/Bot/Features/Dialogue/ConversationState.cs",
+    "existed": false,
+    "beforeSha256": null,
+    "afterSha256": "3e49d0377c50260dfe5e9a8be365abdf71d618620d350337e0323978f9afdc47"
+  },
+  {
+    "path": "src/Bot/Features/Dialogue/StyleRetriever.cs",
+    "existed": false,
+    "beforeSha256": null,
+    "afterSha256": "f97e2296399dcaa5d122c204c26a9a9a7f19d5d30dd1145a8601fa197ea229dc"
+  },
+  {
+    "path": "src/Bot/Features/Memory/ConversationMemory.cs",
+    "existed": true,
+    "beforeSha256": "f601aca0cec2a69c72325cc9a7e121aae80595be7cdb166ecd6dc6e3148df2ef",
+    "afterSha256": "fd42ca90e0a8362ec11db3c0f5a21d8dcefe9772c406dbccc7edcf08912339c7"
+  },
+  {
+    "path": "src/Bot/Features/Settings/SettingsHandler.cs",
+    "existed": true,
+    "beforeSha256": "357266d6d32ad4575348fe93648b16e89643c18385030911f2b03e578bfe7894",
+    "afterSha256": "ec8a7740e9b88343d79122adda0da6e3c89c65c6e40059e2e295955d85281c96"
+  },
+  {
+    "path": "src/Bot/Host/AiProcessor.cs",
+    "existed": true,
+    "beforeSha256": "fd9d38fb627fba4aa466fa70123565703ff614461452480f374aacfe166adb95",
+    "afterSha256": "18c1cc759246c350119b58fb7946e6f257d039fde390103421724e534f9d7f0e"
+  },
+  {
+    "path": "src/Bot/Host/BotOptions.cs",
+    "existed": true,
+    "beforeSha256": "e918e2c46b16f63871fe68eb788e4e0e484bd362aebd7ef38121f86294775b35",
+    "afterSha256": "de8a872138762532bfb3ef898ae26121e261470406db679107defc58e045f083"
+  },
+  {
+    "path": "src/Bot/Host/ServiceRegistration.cs",
+    "existed": true,
+    "beforeSha256": "e83a3ccb7d8d69e3fbbb8f8efb95ab86b64ec80ab2689f29a762ee22d3189b04",
+    "afterSha256": "781f5e5459abc7401c8c73ac93a6733d51cf5176e9d68086c5cf1cad2555cd15"
+  },
+  {
+    "path": "src/Bot/Infrastructure/Groq/GroqClient.cs",
+    "existed": true,
+    "beforeSha256": "64de00007748d1163976e770d99b34a1e7ae9a2bbf9e6ac5790232c591da1d36",
+    "afterSha256": "06ea7430d6b879a5b4ff0a4af5c05d4c894717238cf0549a002d94f8c3b2e999"
+  },
+  {
+    "path": "src/Bot/Infrastructure/Persistence/BotDb.cs",
+    "existed": true,
+    "beforeSha256": "661fd5f9c3b49bee440c888fc4ecfe98f7134f0c72b171bfc042e29b67ce4421",
+    "afterSha256": "25eab9e8a580d3a387b03f1133b227eb3282ac2d48e1f751c46aa6388a920ba9"
+  },
+  {
+    "path": "src/Bot/Infrastructure/Persistence/Migrations/20260916232017_AddConversationState.Designer.cs",
+    "existed": false,
+    "beforeSha256": null,
+    "afterSha256": "fd8fc7392b17af0df87076f8a74771d4129f9306c13683ae70b110e3248d6b70"
+  },
+  {
+    "path": "src/Bot/Infrastructure/Persistence/Migrations/20260916232017_AddConversationState.cs",
+    "existed": false,
+    "beforeSha256": null,
+    "afterSha256": "46edc6c5120b5ff8fe92169584f3535af7691e25c8394cf519ff735a0180c104"
+  },
+  {
+    "path": "src/Bot/Infrastructure/Persistence/Migrations/BotDbModelSnapshot.cs",
+    "existed": true,
+    "beforeSha256": "ddead2718968457743b5062e6c1d51737b972f460985882a666ea96e5427f878",
+    "afterSha256": "e295955cbaa29781e427e8d0d1fcae050061b52b1b17e1269798e190c1c9a364"
+  },
+  {
+    "path": "src/Bot/Resources/Prompts/chat-v1.txt",
+    "existed": true,
+    "beforeSha256": "b0519fffd220c67450d10ceccf30326e0ebdb98e7ef5193e4366e2b92e8dd6bb",
+    "afterSha256": "cb195563fb5655318c883d40b1a8b19dc7b1e82b1bafadc256ea8e6dd0a2929f"
+  },
+  {
+    "path": "src/Bot/Resources/StyleBank/uk-v1.json",
+    "existed": false,
+    "beforeSha256": null,
+    "afterSha256": "6a6dca5c96243303dffc485e565f6fc45cb5b421c36619affafef7cf457006e6"
+  },
+  {
+    "path": "tests/Bot.Tests/Bot.Tests.csproj",
+    "existed": true,
+    "beforeSha256": "f0352a5fe59f1b2f6be80f624dff1e23d771473a3f48d3fc4b48f8a2705ac99c",
+    "afterSha256": "a0c6fb74d665b08505f9cf3a0c8783849a56c3d8724c85d6df94f492cd30aa3b"
+  },
+  {
+    "path": "tests/Bot.Tests/ConversationQualityTests.cs",
+    "existed": false,
+    "beforeSha256": null,
+    "afterSha256": "449ac8a8a45ddd2e380d90b84bf94ae08f279f36edcd5e17cde779e3c5d5bd45"
+  },
+  {
+    "path": "tests/Bot.Tests/DialogueTests.cs",
+    "existed": false,
+    "beforeSha256": null,
+    "afterSha256": "f114b6eae700b61fbd7a734c00b4983bf581456c2cc34f97820381448017b026"
+  },
+  {
+    "path": "tests/Bot.Tests/Quality/judge.txt",
+    "existed": false,
+    "beforeSha256": null,
+    "afterSha256": "7f45530241837f5ce51bb7de5c8cc8b68d76be2f191b8fa0deb548e8513e9187"
+  },
+  {
+    "path": "tests/Bot.Tests/Quality/scenarios.json",
+    "existed": false,
+    "beforeSha256": null,
+    "afterSha256": "b7bde495945abde6994a6a19992cd1c2266b3c3bf2c04d2c628508fcdde6751f"
+  },
+  {
+    "path": "tests/Bot.Tests/TestRig.cs",
+    "existed": true,
+    "beforeSha256": "d41d407bd76cdef6a30620f9d167fbbd894767aeeb3ce60bfb150fd3b54e42ba",
+    "afterSha256": "55a37904d5be31671ba135fa2967c3e3be86a9ceb6331f5883d0fd4b90f21484"
+  }
+]
