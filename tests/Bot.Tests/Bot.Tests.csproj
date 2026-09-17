@@ -10,7 +10,4 @@
     <ProjectReference Include="../../src/Bot/Bot.csproj" />
     <Using Include="Xunit" />
   </ItemGroup>
-  <ItemGroup>
-    <None Update="Quality/**/*" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
 </Project>

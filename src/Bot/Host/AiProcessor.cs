@@ -1,4 +1,3 @@
-using Trivozhno.Features.Dialogue;
 using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Trivozhno.Features.Memory;
@@ -45,13 +44,13 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
         }
         finally { claimGate.Release(); }
         if (context is null || user is null || job is null) return true;
-        var watch = Stopwatch.StartNew(); ConversationAnswer? result = null; var error = "chat.error";
+        var watch = Stopwatch.StartNew(); AiResult? result = null; var error = "chat.error";
         using (var scope = scopes.CreateScope())
         {
             try
             {
                 await scope.ServiceProvider.GetRequiredService<ITelegramClient>().Typing(user.TelegramId, ct);
-                result = await scope.ServiceProvider.GetRequiredService<IConversationModel>().Reply(context, ct);
+                result = await scope.ServiceProvider.GetRequiredService<IAiClient>().Complete(context.Messages, false, ct);
             }
             catch (ContextTooLargeException) { error = "chat.large"; }
             catch (Exception e) when (!ct.IsCancellationRequested) { log.LogWarning("AI job {Operation}: {Category}", job.Id, e.GetType().Name); }
@@ -70,7 +69,6 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             { current.Status = "unanswered"; ui.Say(u, error); }
             else
             {
-                await scope.ServiceProvider.GetRequiredService<IConversationStateStore>().Save(u, current, result.State, context.HasMood, ct);
                 current.Status = "done";
                 db.Messages.Add(new() { UserId = u.Id, SessionId = job.SessionId, Role = "assistant", Text = result.Text, Status = "done",
                     ReplyToId = job.Id, MemoryVersion = job.MemoryVersion, CreatedAt = clock.UtcNow, MoodDerived = context.HasMood, SourcesJson = context.SourcesJson });

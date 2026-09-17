@@ -1,4 +1,3 @@
-using Trivozhno.Features.Dialogue;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -13,11 +12,7 @@ namespace Trivozhno.Infrastructure.Groq;
 
 public sealed record AiMessage(string Role, string Content);
 public sealed record AiResult(string Text, string Model, int Tokens);
-public interface IAiClient
-{
-    Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct);
-    Task<AiResult> CompleteStructured(IReadOnlyList<AiMessage> messages, int outputTokens, CancellationToken ct);
-}
+public interface IAiClient { Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct); }
 public sealed class AiUnavailableException : Exception { }
 public sealed class ContextTooLargeException : Exception { }
 public static class TokenEstimate
@@ -76,17 +71,15 @@ public sealed class AiQuota(IServiceScopeFactory scopes, BotOptions options, ICl
 
 public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quota, ILogger<GroqClient> log) : IAiClient
 {
-    public static int StructuredSchemaTokens => TokenEstimate.Count(DialogueJson.Write(TurnContract.ResponseFormat()));
-    public static Dictionary<string, object> Payload(string model, IReadOnlyList<AiMessage> messages, bool summary, int? structuredTokens = null)
+    public static Dictionary<string, object> Payload(string model, IReadOnlyList<AiMessage> messages, bool summary)
     {
         var body = new Dictionary<string, object>
         {
             ["model"] = model, ["messages"] = messages.Select(x => new { role = x.Role, content = x.Content }).ToArray(),
-            ["temperature"] = summary ? 0.2 : 0.7, ["max_completion_tokens"] = structuredTokens ?? (summary ? 600 : 900), ["stream"] = false
+            ["temperature"] = summary ? 0.2 : 0.7, ["max_completion_tokens"] = summary ? 600 : 1500, ["stream"] = false
         };
         if (model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal)) { body["reasoning_effort"] = "low"; body["include_reasoning"] = false; }
         else if (model == "qwen/qwen3.6-27b") { body["reasoning_effort"] = "none"; body["reasoning_format"] = "hidden"; }
-        if (structuredTokens.HasValue) body["response_format"] = TurnContract.ResponseFormat();
         return body;
     }
     public static string Clean(string text)
@@ -96,24 +89,21 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
         if (end >= 0) text = text[(end + 8)..];
         return text.Trim();
     }
-    public Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct) => CompleteCore(messages, summary, null, ct);
-    public Task<AiResult> CompleteStructured(IReadOnlyList<AiMessage> messages, int outputTokens, CancellationToken ct) => CompleteCore(messages, false, outputTokens, ct);
-    private async Task<AiResult> CompleteCore(IReadOnlyList<AiMessage> messages, bool summary, int? structuredTokens, CancellationToken ct)
+    public async Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct)
     {
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct); budget.CancelAfter(TimeSpan.FromSeconds(options.JobBudget));
         var token = budget.Token; var model = options.Model;
         using var slot = await quota.Enter(token);
         for (var attempt = 0; attempt < 3; attempt++)
         {
-            // Structured chat stays on the selected model. Never silently fall back to an incompatible JSON provider.
-            if (attempt == 2 && !structuredTokens.HasValue) model = options.FallbackModel;
-            var reservation = await quota.Reserve(TokenEstimate.Count(messages) + (structuredTokens ?? (summary ? 600 : 900)) + (structuredTokens.HasValue ? StructuredSchemaTokens : 0), summary, token);
+            if (attempt == 2) model = options.FallbackModel;
+            var reservation = await quota.Reserve(TokenEstimate.Count(messages) + (summary ? 600 : 1500), summary, token);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(TimeSpan.FromSeconds(options.AiTimeout));
             try
             {
                 using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
                 req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.GroqKey);
-                req.Content = JsonContent.Create(Payload(model, messages, summary, structuredTokens));
+                req.Content = JsonContent.Create(Payload(model, messages, summary));
                 using var response = await http.SendAsync(req, timeout.Token);
                 if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) throw new AiUnavailableException();
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
@@ -124,7 +114,6 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
                 }
                 if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound)
                 {
-                    if (structuredTokens.HasValue) throw new AiUnavailableException();
                     using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
                     var code = error.RootElement.TryGetProperty("error", out var e) && e.TryGetProperty("code", out var c) ? c.GetString() : "";
                     if (code is "model_not_found" or "model_decommissioned" or "model_not_supported" || response.StatusCode == HttpStatusCode.NotFound)
@@ -134,19 +123,10 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
                 if ((int)response.StatusCode >= 500) { await Task.Delay(500 * (attempt + 1) + Random.Shared.Next(250), token); continue; }
                 if (!response.IsSuccessStatusCode) throw new AiUnavailableException();
                 using var data = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
-                var choice = data.RootElement.GetProperty("choices")[0];
-                var content = choice.GetProperty("message").GetProperty("content");
-                var text = content.ValueKind == JsonValueKind.String ? content.GetString() ?? "" : "";
+                var text = Clean(data.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "");
+                if (string.IsNullOrWhiteSpace(text)) throw new AiUnavailableException();
                 var usage = data.RootElement.TryGetProperty("usage", out var u) && u.TryGetProperty("total_tokens", out var t) ? t.GetInt32() : 0;
                 await quota.Reconcile(reservation, usage, token);
-                if (structuredTokens.HasValue)
-                {
-                    // No repair/humanizer request. A partial envelope must never become a Telegram message.
-                    if (!choice.TryGetProperty("finish_reason", out var finish) || finish.GetString() != "stop") throw new AiUnavailableException();
-                    _ = TurnContract.Parse(text);
-                }
-                else text = Clean(text);
-                if (string.IsNullOrWhiteSpace(text)) throw new AiUnavailableException();
                 log.LogInformation("Groq response; model {Model}; tokens {Tokens}; summary {Summary}", model, usage, summary);
                 return new(text, model, usage);
             }

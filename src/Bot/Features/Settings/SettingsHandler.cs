@@ -1,4 +1,3 @@
-using Trivozhno.Features.Dialogue;
 using Microsoft.EntityFrameworkCore;
 using Trivozhno.Features.Navigation;
 using Trivozhno.Host;
@@ -33,7 +32,6 @@ public sealed class SettingsHandler(BotDb db, Ui ui, BotOptions options, Trivozh
     {
         u.MemoryVersion++; await ui.CloseSession(u, ct);
         await db.Messages.Where(x => x.UserId == u.Id).ExecuteDeleteAsync(ct);
-        await db.Set<ConversationStateRow>().Where(x => x.UserId == u.Id).ExecuteDeleteAsync(ct);
         await db.Summaries.Where(x => x.UserId == u.Id).ExecuteDeleteAsync(ct);
         await db.Sessions.Where(x => x.UserId == u.Id).ExecuteDeleteAsync(ct);
         await db.Outbox.Where(x => x.UserId == u.Id && x.Kind == "ai").ExecuteDeleteAsync(ct);
