@@ -15,21 +15,12 @@ public sealed class Uk
         strings = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(Path.Combine(root, "uk.json")))!;
         aliases = JsonSerializer.Deserialize<Dictionary<string, string[]>>(File.ReadAllText(Path.Combine(root, "button-aliases.json")))!;
         ChatPrompt = File.ReadAllText(Path.Combine(root, "Prompts", "chat-v1.txt"));
-
-        var styleDir = Path.Combine(root, "StyleBank");
-        var baseSeed = Path.Combine(styleDir, "seed-chats.txt");
-        var bookParts = Directory.GetFiles(styleDir, "seed-chats-books-100-*.txt")
-            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        var baseText = File.Exists(baseSeed) ? File.ReadAllText(baseSeed) : "";
-        var booksText = string.Concat(bookParts.Select(File.ReadAllText));
-        ChatSeedChats = string.Join("\n\n---\n\n", new[] { baseText, booksText }.Where(x => !string.IsNullOrWhiteSpace(x)));
-
+        ChatSeedChats = File.ReadAllText(Path.Combine(root, "StyleBank", "seed-chats.txt"));
         Console.WriteLine(
         $"[PROMPT] File={Path.Combine(root, "Prompts", "chat-v1.txt")} " +
         $"Chars={ChatPrompt.Length} " +
         $"SHA256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ChatPrompt)))} " +
-        $"SeedFiles={1 + bookParts.Length} SeedChars={ChatSeedChats.Length}");
+        $"SeedChars={ChatSeedChats.Length}");
         SummaryPrompt = File.ReadAllText(Path.Combine(root, "Prompts", "summary-v1.txt"));
     }
     public string this[string key] => strings[key];
