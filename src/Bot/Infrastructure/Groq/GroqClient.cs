@@ -71,12 +71,17 @@ public sealed class AiQuota(IServiceScopeFactory scopes, BotOptions options, ICl
 
 public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quota, ILogger<GroqClient> log) : IAiClient
 {
+    private const int ChatCompletionTokens = 700;
+    private const int SummaryCompletionTokens = 600;
+
     public static Dictionary<string, object> Payload(string model, IReadOnlyList<AiMessage> messages, bool summary)
     {
         var body = new Dictionary<string, object>
         {
             ["model"] = model, ["messages"] = messages.Select(x => new { role = x.Role, content = x.Content }).ToArray(),
-            ["temperature"] = summary ? 0.2 : 0.7, ["max_completion_tokens"] = summary ? 600 : 1500, ["stream"] = false
+            ["temperature"] = summary ? 0.2 : 0.7,
+            ["max_completion_tokens"] = summary ? SummaryCompletionTokens : ChatCompletionTokens,
+            ["stream"] = false
         };
         if (model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal)) { body["reasoning_effort"] = "low"; body["include_reasoning"] = false; }
         else if (model == "qwen/qwen3.6-27b") { body["reasoning_effort"] = "none"; body["reasoning_format"] = "hidden"; }
@@ -97,7 +102,8 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
         for (var attempt = 0; attempt < 3; attempt++)
         {
             if (attempt == 2) model = options.FallbackModel;
-            var reservation = await quota.Reserve(TokenEstimate.Count(messages) + (summary ? 600 : 1500), summary, token);
+            var completionTokens = summary ? SummaryCompletionTokens : ChatCompletionTokens;
+            var reservation = await quota.Reserve(TokenEstimate.Count(messages) + completionTokens, summary, token);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(TimeSpan.FromSeconds(options.AiTimeout));
             try
             {
