@@ -7,6 +7,7 @@ public sealed class Uk
     private readonly Dictionary<string, string> strings;
     private readonly Dictionary<string, string[]> aliases;
     public string ChatPrompt { get; }
+    public string ChatSeedChats { get; }
     public string SummaryPrompt { get; }
     public Uk()
     {
@@ -14,10 +15,12 @@ public sealed class Uk
         strings = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(Path.Combine(root, "uk.json")))!;
         aliases = JsonSerializer.Deserialize<Dictionary<string, string[]>>(File.ReadAllText(Path.Combine(root, "button-aliases.json")))!;
         ChatPrompt = File.ReadAllText(Path.Combine(root, "Prompts", "chat-v1.txt"));
+        ChatSeedChats = File.ReadAllText(Path.Combine(root, "StyleBank", "seed-chats.txt"));
         Console.WriteLine(
         $"[PROMPT] File={Path.Combine(root, "Prompts", "chat-v1.txt")} " +
         $"Chars={ChatPrompt.Length} " +
-        $"SHA256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ChatPrompt)))}");
+        $"SHA256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ChatPrompt)))} " +
+        $"SeedChars={ChatSeedChats.Length}");
         SummaryPrompt = File.ReadAllText(Path.Combine(root, "Prompts", "summary-v1.txt"));
     }
     public string this[string key] => strings[key];
