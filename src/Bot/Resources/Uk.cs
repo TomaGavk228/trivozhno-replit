@@ -17,16 +17,19 @@ public sealed class Uk
         ChatPrompt = File.ReadAllText(Path.Combine(root, "Prompts", "chat-v1.txt"));
 
         var styleDir = Path.Combine(root, "StyleBank");
-        var seedFiles = Directory.GetFiles(styleDir, "seed-chats*.txt")
+        var baseSeed = Path.Combine(styleDir, "seed-chats.txt");
+        var bookParts = Directory.GetFiles(styleDir, "seed-chats-books-100-*.txt")
             .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        ChatSeedChats = string.Join("\n\n---\n\n", seedFiles.Select(File.ReadAllText));
+        var baseText = File.Exists(baseSeed) ? File.ReadAllText(baseSeed) : "";
+        var booksText = string.Concat(bookParts.Select(File.ReadAllText));
+        ChatSeedChats = string.Join("\n\n---\n\n", new[] { baseText, booksText }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
         Console.WriteLine(
         $"[PROMPT] File={Path.Combine(root, "Prompts", "chat-v1.txt")} " +
         $"Chars={ChatPrompt.Length} " +
         $"SHA256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ChatPrompt)))} " +
-        $"SeedFiles={seedFiles.Length} SeedChars={ChatSeedChats.Length}");
+        $"SeedFiles={1 + bookParts.Length} SeedChars={ChatSeedChats.Length}");
         SummaryPrompt = File.ReadAllText(Path.Combine(root, "Prompts", "summary-v1.txt"));
     }
     public string this[string key] => strings[key];
