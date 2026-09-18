@@ -1,5 +1,6 @@
 using Trivozhno.Features.Memory;
 using Trivozhno.Infrastructure.Groq;
+using Trivozhno.Resources;
 
 namespace Trivozhno.Tests;
 
@@ -10,7 +11,10 @@ public sealed class HumanChatV2Tests
     [InlineData("Хз")]
     [InlineData("Нічого не хочу")]
     [InlineData("Вона прочитала і не відповіла")]
-    public void CasualOrSupportMessagesDoNotAutomaticallyRetrieveBooks(string text)
+    [InlineData("Поговори зі мною")]
+    [InlineData("Розкажи якусь історію")]
+    [InlineData("Звідки ця інформація?")]
+    public void CasualSupportStoryAndSourceMessagesDoNotAutomaticallyRetrieveBooks(string text)
         => Assert.False(ConversationMemory.ShouldUseKnowledge(text));
 
     [Theory]
@@ -18,9 +22,40 @@ public sealed class HumanChatV2Tests
     [InlineData("Що мені робити з цією ситуацією?")]
     [InlineData("Можеш щось підказати?")]
     [InlineData("Поясни, чому так відбувається")]
-    [InlineData("Звідки ця інформація?")]
+    [InlineData("Допоможи мені розібратися")]
+    [InlineData("Як мені з цим бути?")]
     public void ExplicitAdviceOrKnowledgeRequestsCanRetrieveBooks(string text)
         => Assert.True(ConversationMemory.ShouldUseKnowledge(text));
+
+    [Theory]
+    [InlineData("Розкажи якусь історію")]
+    [InlineData("Розкажи смішний випадок")]
+    [InlineData("Можеш розповісти життєву історію?")]
+    [InlineData("Розкажи щось дивне")]
+    public void ExplicitStoryRequestsUseStoryBank(string text)
+        => Assert.True(ConversationMemory.ShouldUseStoryBank(text));
+
+    [Theory]
+    [InlineData("Я хочу розказати тобі історію")]
+    [InlineData("У мене сьогодні був дивний випадок")]
+    [InlineData("Поговори зі мною")]
+    public void UserStoriesAndNormalChatDoNotTriggerStoryBank(string text)
+        => Assert.False(ConversationMemory.ShouldUseStoryBank(text));
+
+    [Fact]
+    public void StorySelectionUsesRequestedTone()
+    {
+        StorySeed[] bank =
+        [
+            new("fun", ["funny", "awkward"], "funny", "https://example.com/1"),
+            new("warm", ["wholesome"], "warm", "https://example.com/2")
+        ];
+
+        var picked = ConversationMemory.SelectStories(bank, "Розкажи смішну історію", 1, 1);
+
+        Assert.Single(picked);
+        Assert.Contains("funny", picked[0].Tags);
+    }
 
     [Fact]
     public void NormalChatUsesSmallerCompletionBudget()
