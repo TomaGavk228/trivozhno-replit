@@ -52,7 +52,17 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             try
             {
                 await scope.ServiceProvider.GetRequiredService<ITelegramClient>().Typing(user.TelegramId, ct);
-                result = await scope.ServiceProvider.GetRequiredService<IAiClient>().Complete(context.Messages, false, ct);
+                var client = scope.ServiceProvider.GetRequiredService<IAiClient>();
+                result = await client.Complete(context.Messages, false, ct);
+                if (ChatQualityGate.ShouldRetry(result.Text, context.Mode))
+                {
+                    var retryMessages = context.Messages.Concat(
+                    [
+                        new AiMessage("assistant", result.Text),
+                        new AiMessage("system", ChatQualityGate.RetryInstruction(context.Mode))
+                    ]).ToList();
+                    result = await client.Complete(retryMessages, false, ct);
+                }
             }
             catch (ContextTooLargeException) { error = "chat.large"; }
             catch (Exception e) when (!ct.IsCancellationRequested) { log.LogWarning("AI job {Operation}: {Category}", job.Id, e.GetType().Name); }
