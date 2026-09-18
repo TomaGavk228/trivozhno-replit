@@ -40,7 +40,7 @@ public sealed class InfrastructureTests(ITestOutputHelper output)
         finally { Directory.Delete(folder, true); }
     }
     [PostgresFact]
-    public async Task GroqRetries429AndTemporaryServerFailureWithinBudget()
+    public async Task GroqRetriesDoNotLeavePhantomTokenReservations()
     {
         await using var r = new TestRig(); await r.Init();
         var handler = new StubHttp((index, _) =>
@@ -51,7 +51,9 @@ public sealed class InfrastructureTests(ITestOutputHelper output)
         var client = new GroqClient(new HttpClient(handler), r.Services.GetRequiredService<BotOptions>(), r.Services.GetRequiredService<AiQuota>(), NullLogger<GroqClient>.Instance);
         var result = await client.Complete([new("user", "Привіт")], false, default);
         Assert.Equal("Привіт!", result.Text); Assert.Equal(3, handler.Bodies.Count);
-        Assert.Equal(3, await r.Read(db => db.Set<ApiUsage>().CountAsync()));
+        var usage = await r.Read(db => db.Set<ApiUsage>().ToListAsync());
+        Assert.Single(usage);
+        Assert.Equal(10, usage[0].Tokens);
     }
     [PostgresFact]
     public async Task DuplicateInboxIsIdempotentAndPoisonDoesNotBlockAnotherPerson()
