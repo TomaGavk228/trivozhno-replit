@@ -7,7 +7,6 @@ using Npgsql;
 using Trivozhno.Host;
 using Trivozhno.Infrastructure.Groq;
 using Trivozhno.Infrastructure.Persistence;
-using Trivozhno.Infrastructure.Stories;
 using Trivozhno.Infrastructure.Telegram;
 
 namespace Trivozhno.Tests;
@@ -58,16 +57,6 @@ public sealed class FakeAi : IAiClient
         => messages.Last(x => x.Role == "user").Content;
 }
 
-public sealed class FakeStorySource : IStorySource
-{
-    public ConcurrentQueue<(string Query, long Seed)> Requests { get; } = new();
-    public IReadOnlyList<StoryMaterial> Result { get; set; } = [];
-    public Task<IReadOnlyList<StoryMaterial>> Find(string query, long seed, CancellationToken ct)
-    {
-        Requests.Enqueue((query, seed));
-        return Task.FromResult(Result);
-    }
-}
 public sealed record SentMessage(long Destination, string Text, string? Markup, long Id);
 public sealed class FakeTelegram : ITelegramClient
 {
@@ -89,7 +78,6 @@ public sealed class TestRig : IAsyncDisposable
     public ServiceProvider Services { get; private set; } = null!;
     public TestClock Clock { get; } = new();
     public FakeAi Ai { get; } = new();
-    public FakeStorySource Stories { get; } = new();
     public FakeTelegram Telegram { get; } = new();
     public string Schema { get; } = "test_" + Guid.NewGuid().ToString("N");
     private string connection = "";
@@ -112,7 +100,7 @@ public sealed class TestRig : IAsyncDisposable
         var services = new ServiceCollection(); services.AddLogging(); services.AddBot(config);
         // Explicit SET also supports test wire-protocol servers that ignore startup SearchPath.
         services.AddDbContext<BotDb>(o => o.AddInterceptors(new TestSchemaInterceptor(Schema)));
-        services.AddSingleton<IClock>(realClock ? new SystemClock() : Clock); services.AddSingleton<IAiClient>(Ai); services.AddSingleton<IStorySource>(Stories); services.AddSingleton<ITelegramClient>(Telegram);
+        services.AddSingleton<IClock>(realClock ? new SystemClock() : Clock); services.AddSingleton<IAiClient>(Ai); services.AddSingleton<ITelegramClient>(Telegram);
         Services = services.BuildServiceProvider();
         await WithDb(async db => await db.Database.MigrateAsync());
     }
