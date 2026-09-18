@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Trivozhno.Resources;
 
-public sealed record StorySeed(string Id, string[] Tags, string Story, string SourceUrl);
+public sealed record StorySeed(string Id, string[] Tags, string Story);
 
 public sealed class Uk
 {
