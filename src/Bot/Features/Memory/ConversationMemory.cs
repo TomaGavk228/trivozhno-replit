@@ -120,10 +120,15 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
                     sourceTokens += cost;
                     if (sources.Count == 3) break;
                 }
+                if (sources.Count == 0)
+                    additions.Add("Перевіреного книжкового фрагмента за цим запитом не знайдено. Не вигадуй психологічні факти або назви технік. " +
+                                  "Дай просту людську відповідь із того, що вже є в розмові, і не переходь у тон консультанта.");
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
                 log.LogWarning("Knowledge retrieval unavailable: {Category}", e.GetType().Name);
+                additions.Add("Перевірене книжкове джерело зараз недоступне. Не вигадуй психологічні факти. " +
+                              "Відповідай по-дружньому тільки на основі самої розмови.");
             }
         }
 
@@ -139,6 +144,11 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
                     string.Join("\n\n", material.Select((x, i) =>
                         $"Сюжет {i + 1} [{x.SourceId}]\nНаратив: {x.Narrative}\nДіалог: {x.Dialogue}")));
                 sources.AddRange(material.Select(x => new SourceMetadata("story", x.Source, SourceId: x.SourceId)));
+            }
+            else
+            {
+                additions.Add("Матеріал для історії зараз не знайдено. Не вигадуй фальшиву «життєву історію» і не зависай на фразі «є одна». " +
+                              "Коротко й природно скажи, що цього разу нормальної історії не підкинуло, або м'яко продовж розмову.");
             }
         }
 
@@ -180,49 +190,6 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
         }
         catch (JsonException) { return ""; }
     }
-
-    public static IReadOnlyList<StorySeed> SelectStories(IReadOnlyList<StorySeed> stories, string text, long seed, int maxStories = 3)
-    {
-        if (stories.Count == 0 || maxStories <= 0) return [];
-
-        var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var query = text.ToLowerInvariant();
-
-        if (ContainsAny(query, "стосунк", "кохан", "побачен", "партнер", "хлопц", "дівчин", "relationship", "date"))
-            wanted.UnionWith(["relationships"]);
-        if (ContainsAny(query, "сміш", "прикол", "кумед", "крінж", "незруч", "funny", "awkward"))
-            wanted.UnionWith(["funny", "awkward"]);
-        if (ContainsAny(query, "дивн", "збіг", "випадков", "weird", "coincidence"))
-            wanted.UnionWith(["weird", "coincidence"]);
-        if (ContainsAny(query, "мил", "тепл", "добру", "приємн", "wholesome"))
-            wanted.UnionWith(["wholesome"]);
-        if (ContainsAny(query, "кіт", "кот", "собак", "пес", "тварин", "pet"))
-            wanted.UnionWith(["pets"]);
-        if (ContainsAny(query, "подорож", "літак", "поїзд", "дороз", "travel"))
-            wanted.UnionWith(["travel"]);
-        if (ContainsAny(query, "сім'", "родин", "батьк", "дитин", "family"))
-            wanted.UnionWith(["family"]);
-        if (ContainsAny(query, "робот", "офіс", "колег", "work"))
-            wanted.UnionWith(["work"]);
-
-        var ranked = stories.Select((story, index) => new
-        {
-            Story = story,
-            Index = index,
-            Score = story.Tags.Count(wanted.Contains)
-        }).ToArray();
-
-        var topScore = ranked.Max(x => x.Score);
-        var pool = (topScore > 0 ? ranked.Where(x => x.Score == topScore) : ranked).ToArray();
-        var take = Math.Min(maxStories, pool.Length);
-        var start = (int)(Math.Abs(seed % pool.Length));
-        var result = new List<StorySeed>(take);
-        for (var i = 0; i < take; i++) result.Add(pool[(start + i) % pool.Length].Story);
-        return result;
-    }
-
-    private static bool ContainsAny(string text, params string[] parts)
-        => parts.Any(part => text.Contains(part, StringComparison.OrdinalIgnoreCase));
 
     public static string RelevantExcerpt(string text, string query, int limit)
     {
