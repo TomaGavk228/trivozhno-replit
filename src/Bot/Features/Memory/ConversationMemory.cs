@@ -67,7 +67,7 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
             if (stories.Count > 0)
             {
                 var storyData =
-                    "StoryBank. Користувач попросив життєву історію. Нижче — короткі анонімізовані життєві сюжети. " +
+                    "Користувач попросив життєву історію. Нижче — короткі анонімізовані життєві сюжети. " +
                     "Обери ОДИН, який найкраще пасує запиту, і переказуй природно та коротко. Не кажи, що це сталося з тобою. " +
                     "Не додавай вигаданих фактів і не причіплюй мораль.\n\n" +
                     string.Join("\n\n", stories.Select((x, i) => $"Варіант {i + 1}: {x.Story}"));
@@ -135,7 +135,7 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
         // Books are for explicit requests for advice/explanation, not for distress statements
         // that merely contain phrases such as "я не знаю що мені робити".
         if (Regex.IsMatch(value,
-            @"^(порадь|підкажи|поясни|допоможи( мені)? (розібратися|зрозуміти)|що (мені )?робити\b|як (мені )?(з цим бути|краще (зробити|вчинити))\b)",
+            @"^(порадь|підкажи|поясни|допоможи( мені)? (розібратися|зрозуміти)|що (мені )?робити\b|як (мені )?(з цим бути|краще (зробити|вчинити)|заспокоїтися|заспокоїтись|впоратися)\b)",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)))
             return true;
 
