@@ -5,6 +5,7 @@ using Trivozhno.Host;
 using Trivozhno.Infrastructure.Groq;
 using Trivozhno.Infrastructure.Knowledge;
 using Trivozhno.Infrastructure.Persistence;
+using Trivozhno.Infrastructure.Stories;
 using Trivozhno.Resources;
 
 namespace Trivozhno.Features.Memory;
@@ -20,7 +21,7 @@ public interface IConversationMemory
     Task Summarize(Guid userId, long version, CancellationToken ct);
 }
 
-public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever knowledge, IAiClient ai, BotOptions options,
+public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever knowledge, IStorySource stories, IAiClient ai, BotOptions options,
     IClock clock, UserLocks locks, ILogger<ConversationMemory> log) : IConversationMemory
 {
     public async Task<ConversationContext> Build(BotUser user, ChatMessage current, CancellationToken ct)
@@ -161,7 +162,8 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
                 title = x.Title,
                 pageStart = x.PageStart,
                 pageEnd = x.PageEnd,
-                chunkId = x.ChunkId
+                chunkId = x.ChunkId,
+                sourceId = x.SourceId
             })
         });
 
