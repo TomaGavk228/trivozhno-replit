@@ -14,6 +14,7 @@ public sealed class HumanChatV2Tests
     [InlineData("Поговори зі мною")]
     [InlineData("Розкажи якусь історію")]
     [InlineData("Звідки ця інформація?")]
+    [InlineData("Я не знаю що мені робити, і чого я хочу")]
     public void CasualSupportStoryAndSourceMessagesDoNotAutomaticallyRetrieveBooks(string text)
         => Assert.False(ConversationMemory.ShouldUseKnowledge(text));
 
