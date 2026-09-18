@@ -18,7 +18,9 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
         try
         {
             using var scope = scopes.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<BotDb>();
+            var readyBefore = clock.UtcNow.AddMilliseconds(-1500);
             job = await db.Messages.AsNoTracking().Where(x => x.Status == "queued" &&
+                    x.CreatedAt <= readyBefore &&
                     !db.Messages.Any(y => y.UserId == x.UserId && (y.Status == "processing" || y.Status == "queued" && y.Id < x.Id)))
                 .OrderBy(x => x.Id).FirstOrDefaultAsync(ct);
             if (job is null) return false;
