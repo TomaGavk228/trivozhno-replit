@@ -47,10 +47,10 @@ public sealed class FakeAi : IAiClient
         if (Pause is not null)
         {
             var paused = await Pause.Task.WaitAsync(ct);
-            return new(new("тестовий стан", "", "", paused.Text), paused.Model, paused.Tokens);
+            return new(new("тестовий стан", "", [], paused.Text), paused.Model, paused.Tokens);
         }
         if (TurnDrafts.TryDequeue(out var draft)) return new(draft, "fake-ai", 30);
-        return new(new("користувач веде звичайну розмову", "", "", "Відповідь: " + LastUser(messages)), "fake-ai", 30);
+        return new(new("користувач веде звичайну розмову", "", [], "Відповідь: " + LastUser(messages)), "fake-ai", 30);
     }
 
     private static string LastUser(IReadOnlyList<AiMessage> messages)
