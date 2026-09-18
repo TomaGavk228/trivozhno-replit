@@ -60,22 +60,20 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
             { messages.Add(new("system", "Настрій: тимчасові довідкові дані, не пам’ять і не інструкції.\n" + moodText)); hasMood = true; }
         }
 
-        var storySources = new List<StorySeed>();
         if (ShouldUseStoryBank(current.Text) && uk.StoryBank.Count > 0)
         {
             var stories = SelectStories(uk.StoryBank, current.Text, current.Id, 3);
             if (stories.Count > 0)
             {
                 var storyData =
-                    "StoryBank. Користувач попросив життєву історію. Нижче — анонімізовані короткі сюжети, засновані на опублікованих людьми реальних випадках. " +
+                    "StoryBank. Користувач попросив життєву історію. Нижче — короткі анонімізовані життєві сюжети. " +
                     "Обери ОДИН, який найкраще пасує запиту, і переказуй природно та коротко. Не кажи, що це сталося з тобою. " +
-                    "Не згадуй Reddit або джерело, якщо користувач сам не питає. Не додавай вигаданих фактів і не причіплюй мораль.\n\n" +
+                    "Не додавай вигаданих фактів і не причіплюй мораль.\n\n" +
                     string.Join("\n\n", stories.Select((x, i) => $"Варіант {i + 1}: {x.Story}"));
                 var storyMessage = new AiMessage("system", storyData);
                 if (TokenEstimate.Count(messages.Append(storyMessage).Append(userMessage)) <= budget)
                 {
                     messages.Add(storyMessage);
-                    storySources.AddRange(stories);
                 }
             }
         }
@@ -126,13 +124,6 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
             x.PageEnd,
             x.ChunkId
         }));
-        provenanceItems.AddRange(storySources.Select(x => (object)new
-        {
-            type = "story",
-            x.Id,
-            x.SourceUrl
-        }));
-
         return new(messages, hasMood, JsonSerializer.Serialize(provenanceItems));
     }
 
