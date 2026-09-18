@@ -69,7 +69,7 @@ public sealed class SodaStorySource(HttpClient http, ILogger<SodaStorySource> lo
 
             return candidates;
         }
-        catch (Exception e) when (e is HttpRequestException or JsonException or TaskCanceledException && !ct.IsCancellationRequested)
+        catch (Exception e) when (!ct.IsCancellationRequested && (e is HttpRequestException || e is JsonException || e is TaskCanceledException))
         {
             log.LogWarning("SODA story source unavailable: {Category}", e.GetType().Name);
             return [];
