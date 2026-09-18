@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Trivozhno.Infrastructure.Persistence;
 
 #nullable disable
 
