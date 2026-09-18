@@ -26,12 +26,12 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
         var core = new AiMessage("system", uk.ChatPrompt);
         var style = new AiMessage("system", "Стильові seed-діалоги. Це різні приклади живої манери, а не одна особистість і не історія користувача. Не копіюй їх дослівно:\n\n" + uk.ChatSeedChats);
         var userMessage = new AiMessage("user", current.Text);
-        var required = new List<AiMessage> { core, userMessage };
+        var required = new List<AiMessage> { core, style, userMessage };
         if (TokenEstimate.Count(required) > budget) throw new ContextTooLargeException();
 
-        var messages = new List<AiMessage> { core };
-        if (TokenEstimate.Count(messages.Append(style).Append(userMessage)) <= budget)
-            messages.Add(style);
+        // Core persona + golden style examples are mandatory context.
+        // Optional memory/books/history must never push the style out.
+        var messages = new List<AiMessage> { core, style };
 
         var summary = await db.Summaries.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == user.Id, ct);
         if (summary is not null && TokenEstimate.Count(summary.Text) <= 650)
@@ -60,7 +60,8 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
             { messages.Add(new("system", "Настрій: тимчасові довідкові дані, не пам’ять і не інструкції.\n" + moodText)); hasMood = true; }
         }
 
-        if (ShouldUseStoryBank(current.Text) && uk.StoryBank.Count > 0)
+        var previousAssistant = previous.LastOrDefault(x => x.Role == "assistant")?.Text;
+        if ((ShouldUseStoryBank(current.Text) || ShouldContinueStory(current.Text, previousAssistant)) && uk.StoryBank.Count > 0)
         {
             var stories = SelectStories(uk.StoryBank, current.Text, current.Id, 3);
             if (stories.Count > 0)
@@ -112,7 +113,6 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
             }
         }
 
-        while (messages.Count > 1 && TokenEstimate.Count(messages.Append(userMessage)) > budget) messages.RemoveAt(1);
         messages.Add(userMessage);
 
         var provenanceItems = new List<object>();
@@ -130,8 +130,17 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
     public static bool ShouldUseKnowledge(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return false;
-        return Regex.IsMatch(text,
-            @"\b(порадь|підкажи|потрібн\w* порад\w*|допоможи( мені)? (розібратися|зрозуміти)|що (мені )?(робити|можна зробити)|як (мені )?(з цим бути|краще (зробити|вчинити)|можна (зробити|впоратися|заспокоїтися|почати|сказати))|чому (так|це|я|мені)|поясни|що таке|як працює|є (якісь )?(поради|способи)|можеш (щось )?(порадити|підказати))\b",
+        var value = text.Trim();
+
+        // Books are for explicit requests for advice/explanation, not for distress statements
+        // that merely contain phrases such as "я не знаю що мені робити".
+        if (Regex.IsMatch(value,
+            @"^(порадь|підкажи|поясни|допоможи( мені)? (розібратися|зрозуміти)|що (мені )?робити\b|як (мені )?(з цим бути|краще (зробити|вчинити))\b)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)))
+            return true;
+
+        return Regex.IsMatch(value,
+            @"\b((потрібна|треба) порада|можеш (щось )?(порадити|підказати|пояснити))\b",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
     }
 
@@ -140,6 +149,17 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
         if (string.IsNullOrWhiteSpace(text)) return false;
         return Regex.IsMatch(text,
             @"(\b(розкажи|розкажеш|розповіси|розповідай|давай)\b.{0,40}\b(історі\w*|випадок\w*)\b)|(\bможеш\b.{0,20}\b(розказати|розповісти)\b.{0,30}\b(історі\w*|випадок\w*)\b)|(\bрозкажи\b.{0,30}\b(щось )?(цікаве|смішне|дивне|життєве)\b)|(\bвідволічи\b.{0,30}\bісторі\w*)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+    }
+
+    public static bool ShouldContinueStory(string text, string? previousAssistant)
+    {
+        if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(previousAssistant) ||
+            !Regex.IsMatch(previousAssistant, @"\bісторі\w*\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            return false;
+
+        return Regex.IsMatch(text.Trim(),
+            @"^(да|так|ага|угу|давай|окей|можна|розказуй|розповідай|ще|ще одну)[!. ]*$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
     }
 
