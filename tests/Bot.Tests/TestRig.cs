@@ -7,6 +7,7 @@ using Npgsql;
 using Trivozhno.Host;
 using Trivozhno.Infrastructure.Groq;
 using Trivozhno.Infrastructure.Persistence;
+using Trivozhno.Infrastructure.Stories;
 using Trivozhno.Infrastructure.Telegram;
 
 namespace Trivozhno.Tests;
@@ -27,15 +28,44 @@ public sealed class TestClock : IClock
 public sealed class FakeAi : IAiClient
 {
     public ConcurrentQueue<IReadOnlyList<AiMessage>> Requests { get; } = new();
+    public ConcurrentQueue<AiTurnDraft> TurnDrafts { get; } = new();
     public TaskCompletionSource<bool> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource<AiResult>? Pause { get; set; }
     public bool Fail { get; set; }
+
     public async Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct)
     {
         Requests.Enqueue(messages.ToArray()); Entered.TrySetResult(true);
         if (Fail) throw new AiUnavailableException();
         if (Pause is not null) return await Pause.Task.WaitAsync(ct);
-        return new(summary ? "Користувач хоче уважного спілкування." : "Відповідь: " + messages.Last().Content, "fake-ai", 30);
+        return new(summary ? "Користувач хоче уважного спілкування." : "Відповідь: " + LastUser(messages), "fake-ai", 30);
+    }
+
+    public async Task<AiTurnResult> CompleteTurn(IReadOnlyList<AiMessage> messages, CancellationToken ct)
+    {
+        Requests.Enqueue(messages.ToArray()); Entered.TrySetResult(true);
+        if (Fail) throw new AiUnavailableException();
+        if (Pause is not null)
+        {
+            var paused = await Pause.Task.WaitAsync(ct);
+            return new(new("тестовий стан", "", "", paused.Text), paused.Model, paused.Tokens);
+        }
+        if (TurnDrafts.TryDequeue(out var draft)) return new(draft, "fake-ai", 30);
+        return new(new("користувач веде звичайну розмову", "", "", "Відповідь: " + LastUser(messages)), "fake-ai", 30);
+    }
+
+    private static string LastUser(IReadOnlyList<AiMessage> messages)
+        => messages.Last(x => x.Role == "user").Content;
+}
+
+public sealed class FakeStorySource : IStorySource
+{
+    public ConcurrentQueue<(string Query, long Seed)> Requests { get; } = new();
+    public IReadOnlyList<StoryMaterial> Result { get; set; } = [];
+    public Task<IReadOnlyList<StoryMaterial>> Find(string query, long seed, CancellationToken ct)
+    {
+        Requests.Enqueue((query, seed));
+        return Task.FromResult(Result);
     }
 }
 public sealed record SentMessage(long Destination, string Text, string? Markup, long Id);
@@ -59,6 +89,7 @@ public sealed class TestRig : IAsyncDisposable
     public ServiceProvider Services { get; private set; } = null!;
     public TestClock Clock { get; } = new();
     public FakeAi Ai { get; } = new();
+    public FakeStorySource Stories { get; } = new();
     public FakeTelegram Telegram { get; } = new();
     public string Schema { get; } = "test_" + Guid.NewGuid().ToString("N");
     private string connection = "";
@@ -79,7 +110,7 @@ public sealed class TestRig : IAsyncDisposable
         var services = new ServiceCollection(); services.AddLogging(); services.AddBot(config);
         // Explicit SET also supports test wire-protocol servers that ignore startup SearchPath.
         services.AddDbContext<BotDb>(o => o.AddInterceptors(new TestSchemaInterceptor(Schema)));
-        services.AddSingleton<IClock>(realClock ? new SystemClock() : Clock); services.AddSingleton<IAiClient>(Ai); services.AddSingleton<ITelegramClient>(Telegram);
+        services.AddSingleton<IClock>(realClock ? new SystemClock() : Clock); services.AddSingleton<IAiClient>(Ai); services.AddSingleton<IStorySource>(Stories); services.AddSingleton<ITelegramClient>(Telegram);
         Services = services.BuildServiceProvider();
         await WithDb(async db => await db.Database.MigrateAsync());
     }
