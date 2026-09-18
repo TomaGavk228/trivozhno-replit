@@ -142,6 +142,13 @@ public sealed class AiQuota(IServiceScopeFactory scopes, BotOptions options, ICl
             .SetProperty(y => y.ReasoningTokens, usage.ReasoningTokens)
             .SetProperty(y => y.CachedTokens, usage.CachedTokens), ct);
     }
+
+    public async Task Release(long id, CancellationToken ct)
+    {
+        using var scope = scopes.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BotDb>();
+        await db.Set<ApiUsage>().Where(x => x.Id == id).ExecuteDeleteAsync(ct);
+    }
 }
 
 public sealed class GroqClient(
@@ -352,6 +359,7 @@ public sealed class GroqClient(
                         response.Headers.RetryAfter?.Delta ??
                         (response.Headers.RetryAfter?.Date - DateTimeOffset.UtcNow) ??
                         TimeSpan.FromSeconds(5);
+                    await quota.Release(reservation, token);
                     log.LogWarning("Groq rate limited; model {Model}", model);
                     await Task.Delay(
                         retry > TimeSpan.Zero ? retry : TimeSpan.FromSeconds(1),
@@ -374,6 +382,7 @@ public sealed class GroqClient(
                         model.StartsWith("qwen/", StringComparison.Ordinal) &&
                         !string.Equals(model, options.FallbackModel, StringComparison.Ordinal))
                     {
+                        await quota.Release(reservation, token);
                         log.LogWarning(
                             "Qwen structured turn rejected (code {Code}); retrying with fallback {FallbackModel}",
                             code ?? "unknown",
@@ -388,6 +397,7 @@ public sealed class GroqClient(
                     {
                         if (attempt < 2)
                         {
+                            await quota.Release(reservation, token);
                             attempt = 1;
                             continue;
                         }
@@ -398,6 +408,7 @@ public sealed class GroqClient(
 
                 if ((int)response.StatusCode >= 500)
                 {
+                    await quota.Release(reservation, token);
                     await Task.Delay(
                         500 * (attempt + 1) + Random.Shared.Next(250),
                         token);
