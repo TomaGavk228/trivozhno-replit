@@ -17,7 +17,7 @@ public static class ChatStyleProfile
 
     public static string Apply(string? current, IEnumerable<string> delta)
     {
-        var values = Parse(current);
+        var values = Parse(current).ToHashSet(StringComparer.Ordinal);
         foreach (var item in delta.Where(Allowed.Contains).Distinct(StringComparer.Ordinal))
         {
             var group = Groups.First(x => x.Value.Contains(item, StringComparer.Ordinal)).Value;
