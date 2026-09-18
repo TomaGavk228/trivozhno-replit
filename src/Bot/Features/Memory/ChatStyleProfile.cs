@@ -21,7 +21,7 @@ public static class ChatStyleProfile
         foreach (var item in delta.Where(Allowed.Contains).Distinct(StringComparer.Ordinal))
         {
             var group = Groups.First(x => x.Value.Contains(item, StringComparer.Ordinal)).Value;
-            values.RemoveWhere(group.Contains);
+            values.RemoveWhere(x => group.Contains(x, StringComparer.Ordinal));
             values.Add(item);
         }
         return string.Join(',', values.Order(StringComparer.Ordinal));
