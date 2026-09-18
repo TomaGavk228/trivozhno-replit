@@ -86,15 +86,45 @@ public static class OperatorCommands
                     await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); Console.WriteLine("Статус доставки оновлено."); return 0;
                 }
             case "metrics":
+            {
+                var since = DateTimeOffset.UtcNow.AddDays(-1);
+                var usage = await db.Set<ApiUsage>().Where(x => x.At > since).AsNoTracking().ToListAsync(ct);
+                var byModel = usage
+                    .GroupBy(x => x.Model)
+                    .Select(g => new
+                    {
+                        model = string.IsNullOrWhiteSpace(g.Key) ? "legacy" : g.Key,
+                        requests = g.Count(),
+                        total = g.Sum(x => x.Tokens),
+                        prompt = g.Sum(x => x.PromptTokens),
+                        completion = g.Sum(x => x.CompletionTokens),
+                        reasoning = g.Sum(x => x.ReasoningTokens),
+                        cached = g.Sum(x => x.CachedTokens),
+                        summaries = g.Count(x => x.Summary)
+                    })
+                    .OrderByDescending(x => x.total)
+                    .ToArray();
+
                 Console.WriteLine(JsonSerializer.Serialize(new
                 {
                     inbox = await db.Inbox.CountAsync(x => x.Status == "queued", ct),
                     ai = await db.Messages.CountAsync(x => x.Status == "queued" || x.Status == "processing", ct),
                     outbox = await db.Outbox.CountAsync(x => x.Status == "queued", ct),
                     unknown = await db.Outbox.CountAsync(x => x.Status == "delivery_unknown", ct),
-                    errors = await db.Inbox.CountAsync(x => x.Status == "failed", ct) + await db.Outbox.CountAsync(x => x.Status == "failed", ct),
-                    groqTokens24h = await db.Set<ApiUsage>().Where(x => x.At > DateTimeOffset.UtcNow.AddDays(-1)).SumAsync(x => x.Tokens, ct)
-                })); return 0;
+                    errors = await db.Inbox.CountAsync(x => x.Status == "failed", ct) +
+                             await db.Outbox.CountAsync(x => x.Status == "failed", ct),
+                    groq24h = new
+                    {
+                        total = usage.Sum(x => x.Tokens),
+                        prompt = usage.Sum(x => x.PromptTokens),
+                        completion = usage.Sum(x => x.CompletionTokens),
+                        reasoning = usage.Sum(x => x.ReasoningTokens),
+                        cached = usage.Sum(x => x.CachedTokens),
+                        byModel
+                    }
+                }));
+                return 0;
+            }
             case "groq-smoke":
                 if (!args.Contains("--live")) throw new InvalidOperationException("Supply --live to consume a small amount of Groq quota.");
                 var result = await provider.GetRequiredService<IAiClient>().Complete([new("system", "Відповідай українською одним коротким реченням."), new("user", "Привіт!")], false, ct);
