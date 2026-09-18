@@ -47,8 +47,8 @@ public sealed class HumanChatV2Tests
     {
         StorySeed[] bank =
         [
-            new("fun", ["funny", "awkward"], "funny", "https://example.com/1"),
-            new("warm", ["wholesome"], "warm", "https://example.com/2")
+            new("fun", ["funny", "awkward"], "funny"),
+            new("warm", ["wholesome"], "warm")
         ];
 
         var picked = ConversationMemory.SelectStories(bank, "Розкажи смішну історію", 1, 1);
