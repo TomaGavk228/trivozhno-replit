@@ -10,7 +10,7 @@ using Trivozhno.Resources;
 namespace Trivozhno.Features.Memory;
 
 public sealed record ConversationContext(IReadOnlyList<AiMessage> Messages, bool HasMood);
-public sealed record SourceMetadata(string Type, string Title, int PageStart, int PageEnd, long ChunkId);
+public sealed record SourceMetadata(string Type, string Title, int PageStart = 0, int PageEnd = 0, long ChunkId = 0, string? SourceId = null);
 public sealed record ConversationAugmentation(IReadOnlyList<AiMessage> Messages, IReadOnlyList<SourceMetadata> Sources);
 
 public interface IConversationMemory
@@ -47,6 +47,19 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
                 "Короткий стан попереднього ходу розмови. Це робоча пам'ять, не текст для повторення користувачу:\n" + priorState);
             if (TokenEstimate.Count(messages.Append(stateMessage).Append(userMessage)) <= budget)
                 messages.Add(stateMessage);
+        }
+
+        if (current.Text.Contains("звідки", StringComparison.OrdinalIgnoreCase) ||
+            current.Text.Contains("джерело", StringComparison.OrdinalIgnoreCase))
+        {
+            var priorMetadata = previous.LastOrDefault(x => x.Role == "assistant")?.SourcesJson;
+            if (!string.IsNullOrWhiteSpace(priorMetadata))
+            {
+                var sourceMessage = new AiMessage("system",
+                    "Метадані джерел попередньої відповіді. Використай їх лише якщо людина питає походження інформації:\n" + priorMetadata);
+                if (TokenEstimate.Count(messages.Append(sourceMessage).Append(userMessage)) <= budget)
+                    messages.Add(sourceMessage);
+            }
         }
 
         var summary = await db.Summaries.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == user.Id, ct);
@@ -113,16 +126,18 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(draft.StoryQuery) && uk.StoryBank.Count > 0)
+        if (!string.IsNullOrWhiteSpace(draft.StoryQuery))
         {
-            var stories = SelectStories(uk.StoryBank, draft.StoryQuery, current.Id, 3);
-            if (stories.Count > 0)
+            var material = await stories.Find(draft.StoryQuery, current.Id, ct);
+            if (material.Count > 0)
             {
                 additions.Add(
-                    "Матеріал для історії. Обери один сюжет як основу й природно переказуй українською так, ніби знайомому в чаті. " +
-                    "Не говори, що це сталося з тобою, не додавай моралі та не згадуй банк/джерело. Можна змінювати несуттєві деталі, " +
-                    "але не вигадувати нову ключову подію:\n\n" +
-                    string.Join("\n\n", stories.Select((x, i) => $"Сюжет {i + 1}: {x.Story}")));
+                    "Матеріал для історії з відкритого social-dialogue набору AllenAI SODA. Обери один сюжет як основу й природно " +
+                    "переказуй українською так, ніби знайомому в чаті. Не говори, що це сталося з тобою, не додавай моралі та не згадуй " +
+                    "внутрішній пошук. Можна змінювати несуттєві деталі для природності, але не вигадувати нову ключову подію:\n\n" +
+                    string.Join("\n\n", material.Select((x, i) =>
+                        $"Сюжет {i + 1} [{x.SourceId}]\nНаратив: {x.Narrative}\nДіалог: {x.Dialogue}")));
+                sources.AddRange(material.Select(x => new SourceMetadata("story", x.Source, SourceId: x.SourceId)));
             }
         }
 
