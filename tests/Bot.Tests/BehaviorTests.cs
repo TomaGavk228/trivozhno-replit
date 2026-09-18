@@ -255,7 +255,9 @@ public sealed class BehaviorTests
             x.Content.Contains("не змінюй голос співрозмовника на психолога"));
 
         var assistant = await r.Read(db => db.Messages.SingleAsync(x => x.Role == "assistant"));
-        Assert.Contains("Перевірена психологічна книга", assistant.SourcesJson);
+        using var metadata = System.Text.Json.JsonDocument.Parse(assistant.SourcesJson);
+        Assert.Equal("Перевірена психологічна книга",
+            metadata.RootElement.GetProperty("sources")[0].GetProperty("title").GetString());
     }
 
     [PostgresFact]
