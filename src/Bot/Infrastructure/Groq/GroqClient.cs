@@ -12,7 +12,13 @@ namespace Trivozhno.Infrastructure.Groq;
 
 public sealed record AiMessage(string Role, string Content);
 public sealed record AiResult(string Text, string Model, int Tokens);
-public interface IAiClient { Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct); }
+public sealed record AiTurnDraft(string ConversationState, string KnowledgeQuery, string StoryQuery, string Reply);
+public sealed record AiTurnResult(AiTurnDraft Turn, string Model, int Tokens);
+public interface IAiClient
+{
+    Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct);
+    Task<AiTurnResult> CompleteTurn(IReadOnlyList<AiMessage> messages, CancellationToken ct);
+}
 public sealed class AiUnavailableException : Exception { }
 public sealed class ContextTooLargeException : Exception { }
 public static class TokenEstimate
@@ -72,6 +78,7 @@ public sealed class AiQuota(IServiceScopeFactory scopes, BotOptions options, ICl
 public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quota, ILogger<GroqClient> log) : IAiClient
 {
     private const int ChatCompletionTokens = 700;
+    private const int TurnCompletionTokens = 850;
     private const int SummaryCompletionTokens = 600;
 
     public static Dictionary<string, object> Payload(string model, IReadOnlyList<AiMessage> messages, bool summary)
@@ -83,16 +90,76 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
             ["max_completion_tokens"] = summary ? SummaryCompletionTokens : ChatCompletionTokens,
             ["stream"] = false
         };
-        if (model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal)) { body["reasoning_effort"] = "low"; body["include_reasoning"] = false; }
-        else if (model is "qwen/qwen3.8-27b" or "qwen/qwen3.6-27b")
-        {
-            // Groq Chat Completions currently accepts reasoning_effort for Qwen.
-            // Keep the payload minimal: model-page sampling recommendations such as
-            // min_p/top_k/presence_penalty are not accepted by this endpoint.
-            body["reasoning_effort"] = "none";
-        }
+        AddReasoning(body, model, structuredTurn: false);
         return body;
     }
+
+    public static Dictionary<string, object> TurnPayload(string model, IReadOnlyList<AiMessage> messages)
+    {
+        var properties = new Dictionary<string, object>
+        {
+            ["conversation_state"] = new
+            {
+                type = "string",
+                description = "Короткий робочий стан саме поточної взаємодії: що людина зараз схоже хоче або не хоче, як вона реагує на попередні ходи співрозмовника, і що не варто повторювати. Без діагнозів і без прихованих міркувань."
+            },
+            ["knowledge_query"] = new
+            {
+                type = "string",
+                description = "Пошуковий запит до перевіреної психологічної книжки лише коли відповідь справді потребує фактичного психологічного знання, пояснення або техніки. Для звичайної підтримки, small talk, реакції на емоції чи особистої думки — порожній рядок."
+            },
+            ["story_query"] = new
+            {
+                type = "string",
+                description = "Короткий опис бажаної історії лише якщо людина прямо просить співрозмовника розповісти історію або продовжує такий запит. Інакше порожній рядок."
+            },
+            ["reply"] = new
+            {
+                type = "string",
+                description = "Готова природна наступна репліка Telegram-чату. Якщо knowledge_query або story_query непорожні, це все одно нормальна чернетка без згадування пошуку, книжок, режимів чи внутрішньої роботи."
+            }
+        };
+        var schema = new Dictionary<string, object>
+        {
+            ["type"] = "object",
+            ["properties"] = properties,
+            ["required"] = new[] { "conversation_state", "knowledge_query", "story_query", "reply" },
+            ["additionalProperties"] = false
+        };
+        var body = new Dictionary<string, object>
+        {
+            ["model"] = model,
+            ["messages"] = messages.Select(x => new { role = x.Role, content = x.Content }).ToArray(),
+            ["temperature"] = 0.65,
+            ["max_completion_tokens"] = TurnCompletionTokens,
+            ["stream"] = false,
+            ["response_format"] = new
+            {
+                type = "json_schema",
+                json_schema = new { name = "conversation_turn", strict = true, schema }
+            }
+        };
+        AddReasoning(body, model, structuredTurn: true);
+        return body;
+    }
+
+    private static void AddReasoning(Dictionary<string, object> body, string model, bool structuredTurn)
+    {
+        if (model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal))
+        {
+            body["reasoning_effort"] = "low";
+            body["include_reasoning"] = false;
+        }
+        else if (model is "qwen/qwen3.8-27b")
+        {
+            body["reasoning_effort"] = structuredTurn ? "low" : "none";
+        }
+        else if (model is "qwen/qwen3.6-27b")
+        {
+            body["reasoning_effort"] = "none";
+        }
+    }
+
     public static string Clean(string text)
     {
         text = Regex.Replace(text, @"<think>.*?(</think>|$)", "", RegexOptions.Singleline | RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
@@ -100,7 +167,25 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
         if (end >= 0) text = text[(end + 8)..];
         return text.Trim();
     }
-    public async Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct)
+
+    public Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct)
+        => CompleteRaw(messages, summary, structuredTurn: false, ct);
+
+    public async Task<AiTurnResult> CompleteTurn(IReadOnlyList<AiMessage> messages, CancellationToken ct)
+    {
+        var raw = await CompleteRaw(messages, summary: false, structuredTurn: true, ct);
+        using var json = JsonDocument.Parse(raw.Text);
+        var root = json.RootElement;
+        var turn = new AiTurnDraft(
+            root.GetProperty("conversation_state").GetString()?.Trim() ?? "",
+            root.GetProperty("knowledge_query").GetString()?.Trim() ?? "",
+            root.GetProperty("story_query").GetString()?.Trim() ?? "",
+            root.GetProperty("reply").GetString()?.Trim() ?? "");
+        if (string.IsNullOrWhiteSpace(turn.Reply)) throw new AiUnavailableException();
+        return new(turn, raw.Model, raw.Tokens);
+    }
+
+    private async Task<AiResult> CompleteRaw(IReadOnlyList<AiMessage> messages, bool summary, bool structuredTurn, CancellationToken ct)
     {
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct); budget.CancelAfter(TimeSpan.FromSeconds(options.JobBudget));
         var token = budget.Token; var model = options.Model;
@@ -108,14 +193,14 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
         for (var attempt = 0; attempt < 3; attempt++)
         {
             if (attempt == 2) model = options.FallbackModel;
-            var completionTokens = summary ? SummaryCompletionTokens : ChatCompletionTokens;
+            var completionTokens = summary ? SummaryCompletionTokens : structuredTurn ? TurnCompletionTokens : ChatCompletionTokens;
             var reservation = await quota.Reserve(TokenEstimate.Count(messages) + completionTokens, summary, token);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(TimeSpan.FromSeconds(options.AiTimeout));
             try
             {
                 using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
                 req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.GroqKey);
-                req.Content = JsonContent.Create(Payload(model, messages, summary));
+                req.Content = JsonContent.Create(structuredTurn ? TurnPayload(model, messages) : Payload(model, messages, summary));
                 using var response = await http.SendAsync(req, timeout.Token);
                 if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) throw new AiUnavailableException();
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
@@ -139,7 +224,7 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
                 if (string.IsNullOrWhiteSpace(text)) throw new AiUnavailableException();
                 var usage = data.RootElement.TryGetProperty("usage", out var u) && u.TryGetProperty("total_tokens", out var t) ? t.GetInt32() : 0;
                 await quota.Reconcile(reservation, usage, token);
-                log.LogInformation("Groq response; model {Model}; tokens {Tokens}; summary {Summary}", model, usage, summary);
+                log.LogInformation("Groq response; model {Model}; tokens {Tokens}; summary {Summary}; structuredTurn {StructuredTurn}", model, usage, summary, structuredTurn);
                 return new(text, model, usage);
             }
             catch (Exception e) when (e is HttpRequestException || e is TaskCanceledException && !token.IsCancellationRequested)
