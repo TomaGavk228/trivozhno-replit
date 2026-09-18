@@ -30,7 +30,9 @@ public sealed class SettingsHandler(BotDb db, Ui ui, BotOptions options, Trivozh
     public void ConsentMood(BotUser u) { u.MoodConsentShown = true; u.MoodContextEnabled = true; Show(u); }
     public async Task Clear(BotUser u, CancellationToken ct)
     {
-        u.MemoryVersion++; await ui.CloseSession(u, ct);
+        u.MemoryVersion++;
+        u.ChatStyleProfile = "";
+        await ui.CloseSession(u, ct);
         await db.Messages.Where(x => x.UserId == u.Id).ExecuteDeleteAsync(ct);
         await db.Summaries.Where(x => x.UserId == u.Id).ExecuteDeleteAsync(ct);
         await db.Sessions.Where(x => x.UserId == u.Id).ExecuteDeleteAsync(ct);
