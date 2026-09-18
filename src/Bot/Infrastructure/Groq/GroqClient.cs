@@ -153,6 +153,7 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
         else if (model is "qwen/qwen3.8-27b")
         {
             body["reasoning_effort"] = structuredTurn ? "low" : "none";
+            if (structuredTurn) body["reasoning_format"] = "hidden";
         }
         else if (model is "qwen/qwen3.6-27b")
         {
@@ -213,8 +214,21 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
                 {
                     using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
                     var code = error.RootElement.TryGetProperty("error", out var e) && e.TryGetProperty("code", out var c) ? c.GetString() : "";
+
+                    if (structuredTurn && response.StatusCode == HttpStatusCode.BadRequest &&
+                        model.StartsWith("qwen/", StringComparison.Ordinal) &&
+                        !string.Equals(model, options.FallbackModel, StringComparison.Ordinal))
+                    {
+                        log.LogWarning("Qwen structured turn was rejected; retrying with fallback model {FallbackModel}", options.FallbackModel);
+                        model = options.FallbackModel;
+                        attempt = 1;
+                        continue;
+                    }
+
                     if (code is "model_not_found" or "model_decommissioned" or "model_not_supported" || response.StatusCode == HttpStatusCode.NotFound)
-                    { if (attempt < 2) { attempt = 1; continue; } }
+                    {
+                        if (attempt < 2) { attempt = 1; continue; }
+                    }
                     throw new AiUnavailableException();
                 }
                 if ((int)response.StatusCode >= 500) { await Task.Delay(500 * (attempt + 1) + Random.Shared.Next(250), token); continue; }
