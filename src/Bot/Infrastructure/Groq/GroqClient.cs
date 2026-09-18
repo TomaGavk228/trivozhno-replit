@@ -86,15 +86,10 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
         if (model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal)) { body["reasoning_effort"] = "low"; body["include_reasoning"] = false; }
         else if (model is "qwen/qwen3.8-27b" or "qwen/qwen3.6-27b")
         {
+            // Groq Chat Completions currently accepts reasoning_effort for Qwen.
+            // Keep the payload minimal: model-page sampling recommendations such as
+            // min_p/top_k/presence_penalty are not accepted by this endpoint.
             body["reasoning_effort"] = "none";
-            body["reasoning_format"] = "hidden";
-            if (!summary)
-            {
-                body["top_p"] = 0.80;
-                body["top_k"] = 20;
-                body["min_p"] = 0.0;
-                body["presence_penalty"] = 1.5;
-            }
         }
         return body;
     }
