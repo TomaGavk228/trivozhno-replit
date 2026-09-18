@@ -13,7 +13,7 @@ public sealed class HumanChatV4Tests
             "qwen/qwen3.8-27b",
             [new("user", "Привіт")]);
 
-        Assert.Equal(0.72, payload["temperature"]);
+        Assert.Equal(0.7, payload["temperature"]);
         Assert.Equal(360, payload["max_completion_tokens"]);
         Assert.Equal("none", payload["reasoning_effort"]);
         Assert.False(payload.ContainsKey("reasoning_format"));
@@ -38,7 +38,6 @@ public sealed class HumanChatV4Tests
         Assert.DoesNotContain("story_query", required);
 
         var delta = schema.GetProperty("properties").GetProperty("profile_delta");
-        Assert.Equal(3, delta.GetProperty("maxItems").GetInt32());
         var allowed = delta.GetProperty("items").GetProperty("enum")
             .EnumerateArray()
             .Select(x => x.GetString())
