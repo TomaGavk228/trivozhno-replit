@@ -1,65 +1,68 @@
+using System.Text.Json;
 using Trivozhno.Features.Memory;
 using Trivozhno.Infrastructure.Groq;
-using Trivozhno.Resources;
 
 namespace Trivozhno.Tests;
 
-public sealed class HumanChatV2Tests
+public sealed class HumanChatV3Tests
 {
-    [Theory]
-    [InlineData("Мені сьогодні дуже погано і сил нема")]
-    [InlineData("Хз")]
-    [InlineData("Нічого не хочу")]
-    [InlineData("Вона прочитала і не відповіла")]
-    [InlineData("Поговори зі мною")]
-    [InlineData("Розкажи якусь історію")]
-    [InlineData("Звідки ця інформація?")]
-    [InlineData("Я не знаю що мені робити, і чого я хочу")]
-    public void CasualSupportStoryAndSourceMessagesDoNotAutomaticallyRetrieveBooks(string text)
-        => Assert.False(ConversationMemory.ShouldUseKnowledge(text));
-
-    [Theory]
-    [InlineData("Порадь, що мені робити")]
-    [InlineData("Що мені робити з цією ситуацією?")]
-    [InlineData("Можеш щось підказати?")]
-    [InlineData("Поясни, чому так відбувається")]
-    [InlineData("Допоможи мені розібратися")]
-    [InlineData("Як мені з цим бути?")]
-    public void ExplicitAdviceOrKnowledgeRequestsCanRetrieveBooks(string text)
-        => Assert.True(ConversationMemory.ShouldUseKnowledge(text));
-
-    [Theory]
-    [InlineData("Розкажи якусь історію")]
-    [InlineData("Розкажи смішний випадок")]
-    [InlineData("Можеш розповісти життєву історію?")]
-    [InlineData("Розкажи щось дивне")]
-    public void ExplicitStoryRequestsUseStoryBank(string text)
-        => Assert.True(ConversationMemory.ShouldUseStoryBank(text));
-
-    [Theory]
-    [InlineData("Я хочу розказати тобі історію")]
-    [InlineData("У мене сьогодні був дивний випадок")]
-    [InlineData("Поговори зі мною")]
-    public void UserStoriesAndNormalChatDoNotTriggerStoryBank(string text)
-        => Assert.False(ConversationMemory.ShouldUseStoryBank(text));
-
     [Fact]
-    public void StorySelectionUsesRequestedTone()
+    public void StructuredTurnUsesStrictJsonSchemaOnQwen()
     {
-        StorySeed[] bank =
-        [
-            new("fun", ["funny", "awkward"], "funny"),
-            new("warm", ["wholesome"], "warm")
-        ];
+        var payload = GroqClient.TurnPayload("qwen/qwen3.8-27b", [new("user", "Привіт")]);
 
-        var picked = ConversationMemory.SelectStories(bank, "Розкажи смішну історію", 1, 1);
+        Assert.Equal(0.65, payload["temperature"]);
+        Assert.Equal("low", payload["reasoning_effort"]);
 
-        Assert.Single(picked);
-        Assert.Contains("funny", picked[0].Tags);
+        var json = JsonSerializer.Serialize(payload["response_format"]);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.Equal("json_schema", root.GetProperty("type").GetString());
+        Assert.True(root.GetProperty("json_schema").GetProperty("strict").GetBoolean());
+
+        var schema = root.GetProperty("json_schema").GetProperty("schema");
+        Assert.False(schema.GetProperty("additionalProperties").GetBoolean());
+        var required = schema.GetProperty("required").EnumerateArray().Select(x => x.GetString()).ToArray();
+        Assert.Contains("conversation_state", required);
+        Assert.Contains("knowledge_query", required);
+        Assert.Contains("story_query", required);
+        Assert.Contains("reply", required);
     }
 
     [Fact]
-    public void NormalChatUsesSmallerCompletionBudget()
+    public void StructuredTurnIsAlsoSupportedByGptOssFallback()
+    {
+        var payload = GroqClient.TurnPayload("openai/gpt-oss-120b", [new("user", "Привіт")]);
+
+        Assert.Equal("low", payload["reasoning_effort"]);
+        Assert.Equal(false, payload["include_reasoning"]);
+        Assert.True(payload.ContainsKey("response_format"));
+    }
+
+    [Fact]
+    public void ConversationStateRoundTripsThroughExistingMessageMetadata()
+    {
+        var metadata = ConversationMemory.BuildMetadata(
+            "людина відкинула поради й зараз хоче просто нормальної розмови",
+            [new("book", "Книга", 12, 13, 42)]);
+
+        Assert.Equal(
+            "людина відкинула поради й зараз хоче просто нормальної розмови",
+            ConversationMemory.ExtractConversationState(metadata));
+
+        using var json = JsonDocument.Parse(metadata);
+        Assert.Equal("book", json.RootElement.GetProperty("sources")[0].GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public void LegacySourceArrayDoesNotBreakConversationState()
+    {
+        Assert.Equal("", ConversationMemory.ExtractConversationState("[]"));
+        Assert.Equal("", ConversationMemory.ExtractConversationState(null));
+    }
+
+    [Fact]
+    public void NormalSummaryPayloadKeepsExistingBehavior()
     {
         var payload = GroqClient.Payload("openai/gpt-oss-120b", [new("user", "Привіт")], false);
         Assert.Equal(700, payload["max_completion_tokens"]);
