@@ -181,27 +181,22 @@ public sealed class GroqClient(
             ["conversation_state"] = new
             {
                 type = "string",
-                maxLength = 240,
                 description = "Коротко: поточна потреба/тема, реакція на попередній хід і що не повторювати."
             },
             ["knowledge_query"] = new
             {
                 type = "string",
-                maxLength = 120,
                 description = "Український запит до психологічної книги лише коли потрібен перевірений психологічний факт/спосіб. Інакше ''. Якщо не порожній — reply має бути ''."
             },
             ["profile_delta"] = new
             {
                 type = "array",
-                maxItems = 3,
-                uniqueItems = true,
                 items = new { type = "string", @enum = allowedProfile },
                 description = "Лише стійкі або прямо висловлені уподобання стилю. Не роби висновок з одного випадкового повідомлення."
             },
             ["reply"] = new
             {
                 type = "string",
-                maxLength = 900,
                 description = "Фінальна природна репліка чату. Порожня лише якщо knowledge_query непорожній."
             }
         };
@@ -218,7 +213,8 @@ public sealed class GroqClient(
         {
             ["model"] = model,
             ["messages"] = messages.Select(x => new { role = x.Role, content = x.Content }).ToArray(),
-            ["temperature"] = 0.72,
+            ["temperature"] = 0.7,
+            ["top_p"] = 0.8,
             ["max_completion_tokens"] = TurnCompletionTokens,
             ["stream"] = false,
             ["response_format"] = new
@@ -279,19 +275,29 @@ public sealed class GroqClient(
         var delta = root.GetProperty("profile_delta").EnumerateArray()
             .Select(x => x.GetString() ?? "")
             .Where(x => x.Length > 0)
+            .Take(3)
             .ToArray();
 
         var turn = new AiTurnDraft(
-            root.GetProperty("conversation_state").GetString()?.Trim() ?? "",
-            root.GetProperty("knowledge_query").GetString()?.Trim() ?? "",
+            Bound(root.GetProperty("conversation_state").GetString(), 240),
+            Bound(root.GetProperty("knowledge_query").GetString(), 120),
             delta,
-            root.GetProperty("reply").GetString()?.Trim() ?? "");
+            Bound(root.GetProperty("reply").GetString(), 1200));
 
         if (string.IsNullOrWhiteSpace(turn.Reply) &&
             string.IsNullOrWhiteSpace(turn.KnowledgeQuery))
             throw new AiUnavailableException();
 
         return new(turn, raw.Model, raw.Tokens);
+    }
+
+    private static string Bound(string? value, int max)
+    {
+        var text = value?.Trim() ?? "";
+        if (text.Length <= max) return text;
+        var length = max;
+        if (char.IsHighSurrogate(text[length - 1])) length--;
+        return text[..length];
     }
 
     private async Task<AiResult> CompleteRaw(
