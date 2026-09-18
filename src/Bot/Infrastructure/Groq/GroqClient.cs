@@ -84,7 +84,18 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
             ["stream"] = false
         };
         if (model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal)) { body["reasoning_effort"] = "low"; body["include_reasoning"] = false; }
-        else if (model == "qwen/qwen3.6-27b") { body["reasoning_effort"] = "none"; body["reasoning_format"] = "hidden"; }
+        else if (model is "qwen/qwen3.8-27b" or "qwen/qwen3.6-27b")
+        {
+            body["reasoning_effort"] = "none";
+            body["reasoning_format"] = "hidden";
+            if (!summary)
+            {
+                body["top_p"] = 0.80;
+                body["top_k"] = 20;
+                body["min_p"] = 0.0;
+                body["presence_penalty"] = 1.5;
+            }
+        }
         return body;
     }
     public static string Clean(string text)
