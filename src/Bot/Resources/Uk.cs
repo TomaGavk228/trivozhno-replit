@@ -9,7 +9,6 @@ public sealed class Uk
     private readonly Dictionary<string, string> strings;
     private readonly Dictionary<string, string[]> aliases;
     public string ChatPrompt { get; }
-    public string ChatSeedChats { get; }
     public IReadOnlyList<StorySeed> StoryBank { get; }
     public string SummaryPrompt { get; }
 
@@ -19,7 +18,6 @@ public sealed class Uk
         strings = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(Path.Combine(root, "uk.json")))!;
         aliases = JsonSerializer.Deserialize<Dictionary<string, string[]>>(File.ReadAllText(Path.Combine(root, "button-aliases.json")))!;
         ChatPrompt = File.ReadAllText(Path.Combine(root, "Prompts", "chat-v1.txt"));
-        ChatSeedChats = File.ReadAllText(Path.Combine(root, "StyleBank", "seed-chats.txt"));
 
         var storyPath = Path.Combine(root, "StoryBank", "stories.jsonl");
         var storyJson = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
@@ -36,7 +34,7 @@ public sealed class Uk
         $"[PROMPT] File={Path.Combine(root, "Prompts", "chat-v1.txt")} " +
         $"Chars={ChatPrompt.Length} " +
         $"SHA256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ChatPrompt)))} " +
-        $"SeedChars={ChatSeedChats.Length} StoryCount={StoryBank.Count}");
+        $"StoryCount={StoryBank.Count}");
         SummaryPrompt = File.ReadAllText(Path.Combine(root, "Prompts", "summary-v1.txt"));
     }
 
