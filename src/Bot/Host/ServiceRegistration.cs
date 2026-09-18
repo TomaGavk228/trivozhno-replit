@@ -9,7 +9,6 @@ using Trivozhno.Features.Settings;
 using Trivozhno.Infrastructure.Groq;
 using Trivozhno.Infrastructure.Knowledge;
 using Trivozhno.Infrastructure.Persistence;
-using Trivozhno.Infrastructure.Stories;
 using Trivozhno.Infrastructure.Telegram;
 using Trivozhno.Resources;
 
@@ -26,7 +25,6 @@ public static class ServiceRegistration
         services.AddLogging(b => { b.AddFilter("System.Net.Http.HttpClient", LogLevel.None); b.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.None); });
         services.AddHttpClient<ITelegramClient, TelegramClient>(c => c.Timeout = TimeSpan.FromSeconds(40)).RemoveAllLoggers();
         services.AddHttpClient<IAiClient, GroqClient>(c => c.Timeout = Timeout.InfiniteTimeSpan).RemoveAllLoggers();
-        services.AddHttpClient<IStorySource, SodaStorySource>(c => c.Timeout = TimeSpan.FromSeconds(12)).RemoveAllLoggers();
         services.AddScoped<IKnowledgeRetriever, KnowledgeRetriever>(); services.AddScoped<IConversationMemory, ConversationMemory>();
         services.AddScoped<BookImporter>(); services.AddScoped<Ui>(); services.AddScoped<DraftStore>(); services.AddScoped<Router>();
         services.AddScoped<ConversationHandler>(); services.AddScoped<ConfessionHandler>(); services.AddScoped<MoodHandler>();
