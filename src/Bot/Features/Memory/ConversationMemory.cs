@@ -88,8 +88,12 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
             try
             {
                 var query = current.Text;
-                if (query.Length < 100 && Regex.IsMatch(query, @"\b(це|цього|цьому|він|вона|вони|його|її|знову|далі)\b", RegexOptions.IgnoreCase))
-                    query += " " + previous.LastOrDefault(x => x.Role == "user")?.Text;
+                var previousUser = previous.LastOrDefault(x => x.Role == "user")?.Text;
+                var needsContext = query.Length < 100 &&
+                    (mode == TurnMode.Advice ||
+                     Regex.IsMatch(query, @"\b(це|цього|цьому|він|вона|вони|його|її|знову|далі)\b", RegexOptions.IgnoreCase));
+                if (needsContext && !string.IsNullOrWhiteSpace(previousUser))
+                    query = previousUser + "\n" + query;
                 if (Lexicon.Terms(query).Length > 0) sources.AddRange(await knowledge.Search(query, ct));
             }
             catch (Exception e) when (e is not OperationCanceledException)
