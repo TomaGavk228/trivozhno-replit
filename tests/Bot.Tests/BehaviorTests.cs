@@ -190,4 +190,105 @@ public sealed class BehaviorTests
         using (var s = r.Services.CreateScope()) await s.ServiceProvider.GetRequiredService<IConversationMemory>().Summarize(u.Id, u.MemoryVersion, default);
         Assert.Equal(10, await r.Read(db => db.Messages.CountAsync())); Assert.Equal(1, await r.Read(db => db.Summaries.CountAsync()));
     }
+    [PostgresFact]
+    public async Task ConversationStateFromPreviousTurnIsPassedIntoNextTurn()
+    {
+        await using var r = new TestRig(); await r.Init(); await r.StartChat();
+        r.Ai.TurnDrafts.Enqueue(new(
+            "користувач відкинув пораду; не тиснути питаннями; краще переключити розмову",
+            "", "", "ок, тоді без порад"));
+
+        await r.Text("нічого не хочу");
+        await r.Processor.Step(default);
+
+        await r.Text("і шо");
+        await r.Processor.Step(default);
+
+        var second = r.Ai.Requests.ToArray()[1];
+        Assert.Contains(second, x => x.Role == "system" &&
+            x.Content.Contains("користувач відкинув пораду") &&
+            x.Content.Contains("не тиснути питаннями"));
+    }
+
+    [PostgresFact]
+    public async Task BookGroundingHappensOnlyAfterModelRequestsKnowledge()
+    {
+        await using var r = new TestRig(); await r.Init(); await r.StartChat();
+        var u = await r.User();
+        await r.WithDb(async db =>
+        {
+            var source = new KnowledgeSource
+            {
+                Title = "Перевірена психологічна книга",
+                Hash = "human-chat-v3-book",
+                Active = true,
+                ImportedAt = r.Clock.UtcNow
+            };
+            db.Sources.Add(source);
+            await db.SaveChangesAsync();
+            db.Chunks.Add(new KnowledgeChunk
+            {
+                SourceId = source.Id,
+                Ordinal = 0,
+                PageStart = 10,
+                PageEnd = 11,
+                Text = "Короткий перевірений фрагмент про тривогу і способи зменшення напруги.",
+                Terms = ["тривога", "напруга"]
+            });
+            await db.SaveChangesAsync();
+        });
+
+        r.Ai.TurnDrafts.Enqueue(new(
+            "користувач прямо попросив конкретний спосіб заспокоїтися",
+            "тривога напруга", "", "можна спробувати одну просту штуку"));
+        r.Ai.TurnDrafts.Enqueue(new(
+            "користувач попросив допомогу; відповіли коротко без лекції",
+            "", "", "я б почав з однієї простої речі, без десяти вправ одразу"));
+
+        await r.Text("що мені робити щоб заспокоїтися?");
+        await r.Processor.Step(default);
+
+        var requests = r.Ai.Requests.ToArray();
+        Assert.Equal(2, requests.Length);
+        Assert.Contains(requests[1], x => x.Role == "system" &&
+            x.Content.Contains("Перевірений довідковий фрагмент") &&
+            x.Content.Contains("не змінюй голос співрозмовника на психолога"));
+
+        var assistant = await r.Read(db => db.Messages.SingleAsync(x => x.Role == "assistant"));
+        Assert.Contains("Перевірена психологічна книга", assistant.SourcesJson);
+    }
+
+    [PostgresFact]
+    public async Task StoryRequestUsesExternalStorySourceAndRegeneratesNaturalReply()
+    {
+        await using var r = new TestRig(); await r.Init(); await r.StartChat();
+        r.Stories.Result =
+        [
+            new("allenai/soda (CC-BY-4.0)", "train:123",
+                "Two friends miss the same bus and end up discovering a tiny night market while waiting.",
+                "A: Well, there goes our bus.\nB: At least that food stall smells incredible.")
+        ];
+
+        r.Ai.TurnDrafts.Enqueue(new(
+            "користувач хоче відволіктися історією",
+            "", "light funny everyday story", "о, є одна"));
+        r.Ai.TurnDrafts.Enqueue(new(
+            "користувач слухає легку історію",
+            "", "", "коротше, двоє друзів запізнилися на автобус і випадково натрапили на нічний базар..."));
+
+        await r.Text("розкажи якусь історію");
+        await r.Processor.Step(default);
+
+        Assert.Single(r.Stories.Requests);
+        Assert.Equal("light funny everyday story", r.Stories.Requests.Single().Query);
+
+        var requests = r.Ai.Requests.ToArray();
+        Assert.Equal(2, requests.Length);
+        Assert.Contains(requests[1], x => x.Content.Contains("AllenAI SODA") && x.Content.Contains("train:123"));
+
+        var assistant = await r.Read(db => db.Messages.SingleAsync(x => x.Role == "assistant"));
+        Assert.Contains("train:123", assistant.SourcesJson);
+        Assert.Contains("двоє друзів", assistant.Text);
+    }
+
 }
