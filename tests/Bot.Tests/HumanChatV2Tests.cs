@@ -13,6 +13,7 @@ public sealed class HumanChatV3Tests
 
         Assert.Equal(0.65, payload["temperature"]);
         Assert.Equal("low", payload["reasoning_effort"]);
+        Assert.Equal("hidden", payload["reasoning_format"]);
 
         var json = JsonSerializer.Serialize(payload["response_format"]);
         using var doc = JsonDocument.Parse(json);
