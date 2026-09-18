@@ -9,10 +9,14 @@ using Trivozhno.Resources;
 
 namespace Trivozhno.Features.Memory;
 
-public sealed record ConversationContext(IReadOnlyList<AiMessage> Messages, bool HasMood, string SourcesJson, TurnMode Mode);
+public sealed record ConversationContext(IReadOnlyList<AiMessage> Messages, bool HasMood);
+public sealed record SourceMetadata(string Type, string Title, int PageStart, int PageEnd, long ChunkId);
+public sealed record ConversationAugmentation(IReadOnlyList<AiMessage> Messages, IReadOnlyList<SourceMetadata> Sources);
+
 public interface IConversationMemory
 {
     Task<ConversationContext> Build(BotUser user, ChatMessage current, CancellationToken ct);
+    Task<ConversationAugmentation> Enrich(ConversationContext context, ChatMessage current, AiTurnDraft draft, CancellationToken ct);
     Task Summarize(Guid userId, long version, CancellationToken ct);
 }
 
@@ -21,25 +25,29 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
 {
     public async Task<ConversationContext> Build(BotUser user, ChatMessage current, CancellationToken ct)
     {
-        const int chatOutputReserve = 700;
+        const int chatOutputReserve = 850;
         var budget = Math.Min(options.InputBudget, options.TokensPerMinute - chatOutputReserve);
 
         var previous = await db.Messages.AsNoTracking().Where(x => x.UserId == user.Id &&
                 (x.Role == "user" && x.Id < current.Id || x.Role == "assistant" && x.ReplyToId < current.Id) &&
                 (x.Status == "done" || x.Status == "unanswered") && (user.MoodContextEnabled || !x.MoodDerived))
-            .OrderByDescending(x => x.ReplyToId ?? x.Id).ThenByDescending(x => x.Role).Take(20).ToListAsync(ct);
+            .OrderByDescending(x => x.ReplyToId ?? x.Id).ThenByDescending(x => x.Role).Take(24).ToListAsync(ct);
         previous = previous.OrderBy(x => x.ReplyToId ?? x.Id).ThenBy(x => x.Role == "assistant" ? 1 : 0).ToList();
 
-        var previousUserTexts = previous.Where(x => x.Role == "user").Select(x => x.Text).ToList();
-        var mode = TurnRouter.Classify(current.Text, previousUserTexts);
-
-        var core = new AiMessage("system", uk.ChatPrompt);
-        var modeMessage = new AiMessage("system", TurnRouter.Instruction(mode));
         var userMessage = new AiMessage("user", current.Text);
-        var required = new List<AiMessage> { core, modeMessage, userMessage };
-        if (TokenEstimate.Count(required) > budget) throw new ContextTooLargeException();
+        var core = new AiMessage("system", uk.ChatPrompt);
+        if (TokenEstimate.Count([core, userMessage]) > budget) throw new ContextTooLargeException();
 
-        var messages = new List<AiMessage> { core, modeMessage };
+        var messages = new List<AiMessage> { core };
+
+        var priorState = ExtractConversationState(previous.LastOrDefault(x => x.Role == "assistant")?.SourcesJson);
+        if (!string.IsNullOrWhiteSpace(priorState))
+        {
+            var stateMessage = new AiMessage("system",
+                "Короткий стан попереднього ходу розмови. Це робоча пам'ять, не текст для повторення користувачу:\n" + priorState);
+            if (TokenEstimate.Count(messages.Append(stateMessage).Append(userMessage)) <= budget)
+                messages.Add(stateMessage);
+        }
 
         var summary = await db.Summaries.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == user.Id, ct);
         if (summary is not null && TokenEstimate.Count(summary.Text) <= 650)
@@ -65,95 +73,96 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
             }
         }
 
-        if (mode == TurnMode.Story && uk.StoryBank.Count > 0)
-        {
-            var storyQuery = TurnRouter.ResolveStoryQuery(current.Text, previousUserTexts);
-            var stories = SelectStories(uk.StoryBank, storyQuery, current.Id, 3);
-            if (stories.Count > 0)
-            {
-                var storyData =
-                    "Готові життєві сюжети для цієї відповіді. Обери ОДИН і коротко переказуй його. " +
-                    "Не вигадуй іншу історію, не додавай мораль, джерело, імена чи нові факти.\n\n" +
-                    string.Join("\n\n", stories.Select((x, i) => $"Варіант {i + 1}: {x.Story}"));
-                var storyMessage = new AiMessage("system", storyData);
-                if (TokenEstimate.Count(messages.Append(storyMessage).Append(userMessage)) <= budget)
-                    messages.Add(storyMessage);
-            }
-        }
+        var history = previous.Select(x => new AiMessage(x.Role, x.Text)).ToList();
+        while (history.Count > 0 && TokenEstimate.Count(messages.Concat(history).Append(userMessage)) > budget) history.RemoveAt(0);
+        while (history.Count > 0 && history[0].Role == "assistant") history.RemoveAt(0);
+        messages.AddRange(history);
+        messages.Add(userMessage);
 
-        var selected = new List<KnowledgeHit>();
-        if (TurnRouter.UsesBooks(mode))
+        return new(messages, hasMood);
+    }
+
+    public async Task<ConversationAugmentation> Enrich(
+        ConversationContext context, ChatMessage current, AiTurnDraft draft, CancellationToken ct)
+    {
+        var messages = context.Messages.ToList();
+        var sources = new List<SourceMetadata>();
+        var additions = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(draft.KnowledgeQuery))
         {
-            var sources = new List<KnowledgeHit>();
             try
             {
-                var query = current.Text;
-                var previousUser = previous.LastOrDefault(x => x.Role == "user")?.Text;
-                var needsContext = query.Length < 100 &&
-                    (mode == TurnMode.Advice ||
-                     Regex.IsMatch(query, @"\b(це|цього|цьому|він|вона|вони|його|її|знову|далі)\b", RegexOptions.IgnoreCase));
-                if (needsContext && !string.IsNullOrWhiteSpace(previousUser))
-                    query = previousUser + "\n" + query;
-                if (Lexicon.Terms(query).Length > 0) sources.AddRange(await knowledge.Search(query, ct));
+                var hits = await knowledge.Search(draft.KnowledgeQuery, ct);
+                var sourceTokens = 0;
+                foreach (var hit in hits)
+                {
+                    var data = $"{hit.Title}, PDF-сторінки {hit.PageStart}–{hit.PageEnd}:\n{hit.Text}";
+                    var cost = TokenEstimate.Count(data);
+                    if (sourceTokens + cost > 1200) continue;
+                    additions.Add("Перевірений довідковий фрагмент із психологічної книжки. Використай лише факти/ідеї, які реально допомагають відповісти. " +
+                                  "Не цитуй його як підручник і не змінюй голос співрозмовника на психолога:\n" + data);
+                    sources.Add(new("book", hit.Title, hit.PageStart, hit.PageEnd, hit.ChunkId));
+                    sourceTokens += cost;
+                    if (sources.Count == 3) break;
+                }
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
                 log.LogWarning("Knowledge retrieval unavailable: {Category}", e.GetType().Name);
             }
+        }
 
-            var sourceTokens = 0;
-            foreach (var hit in sources)
+        if (!string.IsNullOrWhiteSpace(draft.StoryQuery) && uk.StoryBank.Count > 0)
+        {
+            var stories = SelectStories(uk.StoryBank, draft.StoryQuery, current.Id, 3);
+            if (stories.Count > 0)
             {
-                var data = $"Довідковий фрагмент для відповіді. {hit.Title}, PDF-сторінки {hit.PageStart}–{hit.PageEnd}:\n{hit.Text}";
-                var cost = TokenEstimate.Count(data);
-                if (sourceTokens + cost > 1200 || TokenEstimate.Count(messages.Append(new("system", data)).Append(userMessage)) > budget) continue;
-                messages.Add(new("system", data));
-                selected.Add(hit);
-                sourceTokens += cost;
-                if (selected.Count == 3) break;
+                additions.Add(
+                    "Матеріал для історії. Обери один сюжет як основу й природно переказуй українською так, ніби знайомому в чаті. " +
+                    "Не говори, що це сталося з тобою, не додавай моралі та не згадуй банк/джерело. Можна змінювати несуттєві деталі, " +
+                    "але не вигадувати нову ключову подію:\n\n" +
+                    string.Join("\n\n", stories.Select((x, i) => $"Сюжет {i + 1}: {x.Story}")));
             }
         }
 
-        var history = previous.Select(x => new AiMessage(x.Role, x.Text)).ToList();
-        while (history.Count > 0 && TokenEstimate.Count(messages.Concat(history).Append(userMessage)) > budget) history.RemoveAt(0);
-        while (history.Count > 0 && history[0].Role == "assistant") history.RemoveAt(0);
-        messages.AddRange(history);
+        if (additions.Count == 0) return new(messages, sources);
 
-        if (current.Text.Contains("звідки", StringComparison.OrdinalIgnoreCase) || current.Text.Contains("джерело", StringComparison.OrdinalIgnoreCase))
-        {
-            var provenance = previous.LastOrDefault(x => x.Role == "assistant")?.SourcesJson;
-            if (provenance is { Length: > 2 })
-            {
-                var provenanceMessage = new AiMessage("system", "Метадані джерел попередньої відповіді, лише довідка: " + provenance);
-                if (TokenEstimate.Count(messages.Append(provenanceMessage).Append(userMessage)) <= budget) messages.Add(provenanceMessage);
-            }
-        }
+        messages.Add(new AiMessage("system",
+            "Нижче додатковий матеріал для останньої репліки. Він дає зміст, а не стиль. " +
+            "Відповідь усе одно має звучати як та сама жива переписка з другом.\n\n" +
+            string.Join("\n\n", additions)));
 
-        messages.Add(userMessage);
-
-        var provenanceItems = selected.Select(x => (object)new
-        {
-            type = "book",
-            x.Title,
-            x.PageStart,
-            x.PageEnd,
-            x.ChunkId
-        }).ToList();
-
-        return new(messages, hasMood, JsonSerializer.Serialize(provenanceItems), mode);
+        return new(messages, sources);
     }
 
-    public static bool ShouldUseKnowledge(string text)
-        => TurnRouter.Classify(text) is TurnMode.Advice or TurnMode.Info;
+    public static string BuildMetadata(string conversationState, IReadOnlyList<SourceMetadata> sources)
+        => JsonSerializer.Serialize(new
+        {
+            conversation_state = conversationState,
+            sources = sources.Select(x => new
+            {
+                type = x.Type,
+                title = x.Title,
+                pageStart = x.PageStart,
+                pageEnd = x.PageEnd,
+                chunkId = x.ChunkId
+            })
+        });
 
-    public static bool ShouldUseStoryBank(string text)
-        => TurnRouter.IsStoryRequest(text);
-
-    public static bool ShouldContinueStory(string text, string? previousAssistant)
-        => TurnRouter.IsContinuationPhrase(text) &&
-           !string.IsNullOrWhiteSpace(previousAssistant) &&
-           Regex.IsMatch(previousAssistant, @"\b(історі\w*|одн\w+ (кіт|людин|хлоп|дівчин|чоловік|жінк))\b",
-               RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    public static string ExtractConversationState(string? metadata)
+    {
+        if (string.IsNullOrWhiteSpace(metadata)) return "";
+        try
+        {
+            using var json = JsonDocument.Parse(metadata);
+            return json.RootElement.ValueKind == JsonValueKind.Object &&
+                   json.RootElement.TryGetProperty("conversation_state", out var state)
+                ? state.GetString()?.Trim() ?? ""
+                : "";
+        }
+        catch (JsonException) { return ""; }
+    }
 
     public static IReadOnlyList<StorySeed> SelectStories(IReadOnlyList<StorySeed> stories, string text, long seed, int maxStories = 3)
     {
@@ -162,21 +171,21 @@ public sealed class ConversationMemory(BotDb db, Uk uk, IKnowledgeRetriever know
         var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var query = text.ToLowerInvariant();
 
-        if (ContainsAny(query, "стосунк", "кохан", "побачен", "партнер", "хлопц", "дівчин"))
+        if (ContainsAny(query, "стосунк", "кохан", "побачен", "партнер", "хлопц", "дівчин", "relationship", "date"))
             wanted.UnionWith(["relationships"]);
-        if (ContainsAny(query, "сміш", "прикол", "кумед", "крінж", "незруч"))
+        if (ContainsAny(query, "сміш", "прикол", "кумед", "крінж", "незруч", "funny", "awkward"))
             wanted.UnionWith(["funny", "awkward"]);
-        if (ContainsAny(query, "дивн", "збіг", "випадков"))
+        if (ContainsAny(query, "дивн", "збіг", "випадков", "weird", "coincidence"))
             wanted.UnionWith(["weird", "coincidence"]);
-        if (ContainsAny(query, "мил", "тепл", "добру", "приємн"))
+        if (ContainsAny(query, "мил", "тепл", "добру", "приємн", "wholesome"))
             wanted.UnionWith(["wholesome"]);
-        if (ContainsAny(query, "кіт", "кот", "собак", "пес", "тварин"))
+        if (ContainsAny(query, "кіт", "кот", "собак", "пес", "тварин", "pet"))
             wanted.UnionWith(["pets"]);
-        if (ContainsAny(query, "подорож", "літак", "поїзд", "дороз"))
+        if (ContainsAny(query, "подорож", "літак", "поїзд", "дороз", "travel"))
             wanted.UnionWith(["travel"]);
-        if (ContainsAny(query, "сім'", "родин", "батьк", "дитин"))
+        if (ContainsAny(query, "сім'", "родин", "батьк", "дитин", "family"))
             wanted.UnionWith(["family"]);
-        if (ContainsAny(query, "робот", "офіс", "колег"))
+        if (ContainsAny(query, "робот", "офіс", "колег", "work"))
             wanted.UnionWith(["work"]);
 
         var ranked = stories.Select((story, index) => new
