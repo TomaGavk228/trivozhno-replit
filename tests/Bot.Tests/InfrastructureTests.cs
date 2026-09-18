@@ -107,9 +107,11 @@ public sealed class InfrastructureTests(ITestOutputHelper output)
             : Success());
         var client = new GroqClient(new HttpClient(handler), r.Services.GetRequiredService<BotOptions>(), r.Services.GetRequiredService<AiQuota>(), NullLogger<GroqClient>.Instance);
         var result = await client.Complete([new("user", "Привіт")], false, default);
-        Assert.Equal("qwen/qwen3.6-27b", result.Model); Assert.Equal(2, handler.Bodies.Count);
+        Assert.Equal(r.Services.GetRequiredService<BotOptions>().FallbackModel, result.Model); Assert.Equal(2, handler.Bodies.Count);
         var fallback = JsonDocument.Parse(handler.Bodies[1]).RootElement;
-        Assert.Equal("hidden", fallback.GetProperty("reasoning_format").GetString()); Assert.False(fallback.TryGetProperty("include_reasoning", out _));
+        Assert.Equal("low", fallback.GetProperty("reasoning_effort").GetString());
+        Assert.False(fallback.GetProperty("include_reasoning").GetBoolean());
+        Assert.False(fallback.TryGetProperty("reasoning_format", out _));
         var denied = new StubHttp((_, _) => new(HttpStatusCode.Unauthorized));
         var deniedClient = new GroqClient(new HttpClient(denied), r.Services.GetRequiredService<BotOptions>(), r.Services.GetRequiredService<AiQuota>(), NullLogger<GroqClient>.Instance);
         await Assert.ThrowsAsync<AiUnavailableException>(() => deniedClient.Complete([new("user", "Привіт")], false, default)); Assert.Single(denied.Bodies);
