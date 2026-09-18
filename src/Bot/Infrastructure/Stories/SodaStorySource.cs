@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 
 namespace Trivozhno.Infrastructure.Stories;
@@ -13,18 +11,18 @@ public interface IStorySource
 
 public sealed class SodaStorySource(HttpClient http, ILogger<SodaStorySource> log) : IStorySource
 {
-    private const int TrainRows = 1_191_582;
-    private const int PageSize = 20;
+    private const int SearchSize = 50;
 
-    // Story material is fetched from allenai/soda (CC-BY-4.0) through the public
-    // Hugging Face Dataset Viewer API. We keep source row ids for attribution.
+    // AllenAI SODA is CC-BY-4.0. Hugging Face Dataset Viewer /search uses
+    // full-text BM25 search, so Qwen supplies a short English search phrase.
     public async Task<IReadOnlyList<StoryMaterial>> Find(string query, long seed, CancellationToken ct)
     {
-        var offset = Offset(query, seed);
+        if (string.IsNullOrWhiteSpace(query)) return [];
+
         var url =
-            "https://datasets-server.huggingface.co/rows" +
+            "https://datasets-server.huggingface.co/search" +
             "?dataset=allenai%2Fsoda&config=default&split=train" +
-            $"&offset={offset}&length={PageSize}";
+            $"&query={Uri.EscapeDataString(query)}&offset=0&length={SearchSize}";
 
         try
         {
@@ -54,8 +52,9 @@ public sealed class SodaStorySource(HttpClient http, ILogger<SodaStorySource> lo
                         .Select(x => x.GetString()?.Trim())
                         .Where(x => !string.IsNullOrWhiteSpace(x))
                         .Take(8)
+                        .Select(x => x!)
                         .ToArray();
-                    dialogue = string.Join("\n", lines!);
+                    dialogue = string.Join("\n", lines);
                 }
 
                 if (Unsafe(dialogue)) continue;
@@ -64,23 +63,24 @@ public sealed class SodaStorySource(HttpClient http, ILogger<SodaStorySource> lo
                     "train:" + rowId,
                     narrative,
                     dialogue));
-                if (candidates.Count == 5) break;
             }
 
-            return candidates;
+            if (candidates.Count == 0) return [];
+
+            // Search ranking stays relevant; seed only rotates within the best safe results
+            // so repeated story requests do not always return the identical first item.
+            var pool = candidates.Take(15).ToArray();
+            var start = (int)((ulong)Math.Abs(seed) % (ulong)pool.Length);
+            return Enumerable.Range(0, Math.Min(5, pool.Length))
+                .Select(i => pool[(start + i) % pool.Length])
+                .ToArray();
         }
-        catch (Exception e) when (!ct.IsCancellationRequested && (e is HttpRequestException || e is JsonException || e is TaskCanceledException))
+        catch (Exception e) when (!ct.IsCancellationRequested &&
+                                  (e is HttpRequestException || e is JsonException || e is TaskCanceledException))
         {
             log.LogWarning("SODA story source unavailable: {Category}", e.GetType().Name);
             return [];
         }
-    }
-
-    private static int Offset(string query, long seed)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(query + "|" + seed));
-        var value = BitConverter.ToUInt32(bytes, 0);
-        return (int)(value % (TrainRows - PageSize));
     }
 
     private static bool Unsafe(string text)
