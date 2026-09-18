@@ -179,16 +179,16 @@ public sealed class BehaviorTests
         await r.Text("/menu"); await r.Click("menu:confession"); Assert.Equal(UserState.ConfessionDraft, (await r.User()).State);
     }
     [PostgresFact]
-    public async Task SummaryFailureKeepsMessagesAndSuccessfulSummaryRetainsRecentTen()
+    public async Task SummaryFailureKeepsMessagesAndSuccessfulSummaryRetainsRecentTwelve()
     {
         await using var r = new TestRig(); await r.Init(); await r.StartChat();
-        for (var i = 0; i < 12; i++) { await r.Text("Думка " + i); await r.Processor.Step(default); }
+        for (var i = 0; i < 18; i++) { await r.Text("Думка " + i); await r.Processor.Step(default); }
         var u = await r.User(); r.Ai.Fail = true;
         using (var s = r.Services.CreateScope()) await Assert.ThrowsAsync<AiUnavailableException>(() => s.ServiceProvider.GetRequiredService<IConversationMemory>().Summarize(u.Id, u.MemoryVersion, default));
-        Assert.Equal(24, await r.Read(db => db.Messages.CountAsync()));
+        Assert.Equal(36, await r.Read(db => db.Messages.CountAsync()));
         r.Ai.Fail = false;
         using (var s = r.Services.CreateScope()) await s.ServiceProvider.GetRequiredService<IConversationMemory>().Summarize(u.Id, u.MemoryVersion, default);
-        Assert.Equal(10, await r.Read(db => db.Messages.CountAsync())); Assert.Equal(1, await r.Read(db => db.Summaries.CountAsync()));
+        Assert.Equal(12, await r.Read(db => db.Messages.CountAsync())); Assert.Equal(1, await r.Read(db => db.Summaries.CountAsync()));
     }
     [PostgresFact]
     public async Task ConversationStateFromPreviousTurnIsPassedIntoNextTurn()
