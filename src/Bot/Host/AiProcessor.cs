@@ -77,6 +77,7 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
 
         var watch = Stopwatch.StartNew();
         AiResult? result = null;
+        IReadOnlyList<string> profileDelta = [];
         var metadata = ConversationMemory.BuildMetadata("", []);
         var error = "chat.error";
 
@@ -92,15 +93,34 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
                 var augmented = await memory.Enrich(context, job, first.Turn, ct);
                 var final = first;
                 var totalTokens = first.Tokens;
+                var totalPrompt = 0;
+                var totalCompletion = 0;
+                var totalReasoning = 0;
+                var totalCached = 0;
+                var deltas = first.Turn.ProfileDelta.ToList();
 
                 if (augmented.Messages.Count > context.Messages.Count)
                 {
                     final = await client.CompleteTurn(augmented.Messages, ct);
                     totalTokens += final.Tokens;
+                    deltas.AddRange(final.Turn.ProfileDelta);
                 }
 
-                result = new AiResult(final.Turn.Reply, final.Model, totalTokens);
-                metadata = ConversationMemory.BuildMetadata(final.Turn.ConversationState, augmented.Sources);
+                if (string.IsNullOrWhiteSpace(final.Turn.Reply))
+                    throw new AiUnavailableException();
+
+                profileDelta = deltas;
+                result = new AiResult(
+                    final.Turn.Reply,
+                    final.Model,
+                    totalTokens,
+                    totalPrompt,
+                    totalCompletion,
+                    totalReasoning,
+                    totalCached);
+                metadata = ConversationMemory.BuildMetadata(
+                    final.Turn.ConversationState,
+                    augmented.Sources);
             }
             catch (ContextTooLargeException)
             {
@@ -133,6 +153,7 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             else
             {
                 current.Status = "done";
+                u.ChatStyleProfile = ChatStyleProfile.Apply(u.ChatStyleProfile, profileDelta);
                 db.Messages.Add(new()
                 {
                     UserId = u.Id,
