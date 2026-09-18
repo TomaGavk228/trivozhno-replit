@@ -196,7 +196,7 @@ public sealed class BehaviorTests
         await using var r = new TestRig(); await r.Init(); await r.StartChat();
         r.Ai.TurnDrafts.Enqueue(new(
             "користувач відкинув пораду; не тиснути питаннями; краще переключити розмову",
-            "", "", "ок, тоді без порад"));
+            "", [], "ок, тоді без порад"));
 
         await r.Text("нічого не хочу");
         await r.Processor.Step(default);
@@ -240,10 +240,10 @@ public sealed class BehaviorTests
 
         r.Ai.TurnDrafts.Enqueue(new(
             "користувач прямо попросив конкретний спосіб заспокоїтися",
-            "тривога напруга", "", "можна спробувати одну просту штуку"));
+            "тривога напруга", [], ""));
         r.Ai.TurnDrafts.Enqueue(new(
             "користувач попросив допомогу; відповіли коротко без лекції",
-            "", "", "я б почав з однієї простої речі, без десяти вправ одразу"));
+            "", [], "я б почав з однієї простої речі, без десяти вправ одразу"));
 
         await r.Text("що мені робити щоб заспокоїтися?");
         await r.Processor.Step(default);
@@ -251,8 +251,8 @@ public sealed class BehaviorTests
         var requests = r.Ai.Requests.ToArray();
         Assert.Equal(2, requests.Length);
         Assert.Contains(requests[1], x => x.Role == "system" &&
-            x.Content.Contains("Перевірений довідковий фрагмент") &&
-            x.Content.Contains("не змінюй голос співрозмовника на психолога"));
+            x.Content.Contains("НЕДОВІРЕНІ ДАНІ З КНИГИ") &&
+            x.Content.Contains("не змінюй голос друга на психолога"));
 
         var assistant = await r.Read(db => db.Messages.SingleAsync(x => x.Role == "assistant"));
         using var metadata = System.Text.Json.JsonDocument.Parse(assistant.SourcesJson);
@@ -260,37 +260,54 @@ public sealed class BehaviorTests
             metadata.RootElement.GetProperty("sources")[0].GetProperty("title").GetString());
     }
 
+
     [PostgresFact]
-    public async Task StoryRequestUsesExternalStorySourceAndRegeneratesNaturalReply()
+    public async Task StableStylePreferencePersistsAcrossChatSessions()
     {
         await using var r = new TestRig(); await r.Init(); await r.StartChat();
-        r.Stories.Result =
-        [
-            new("allenai/soda (CC-BY-4.0)", "train:123",
-                "Two friends miss the same bus and end up discovering a tiny night market while waiting.",
-                "A: Well, there goes our bus.\nB: At least that food stall smells incredible.")
-        ];
 
         r.Ai.TurnDrafts.Enqueue(new(
-            "користувач хоче відволіктися історією",
-            "", "light funny everyday story", "о, є одна"));
-        r.Ai.TurnDrafts.Enqueue(new(
-            "користувач слухає легку історію",
-            "", "", "коротше, двоє друзів запізнилися на автобус і випадково натрапили на нічний базар..."));
+            "користувач прямо сказав, що йому заходить невимушений гумор",
+            "",
+            ["likes_humor", "light_punctuation"],
+            "ахах, окей"));
 
-        await r.Text("розкажи якусь історію");
+        await r.Text("оце вже норм, так прикольніше");
         await r.Processor.Step(default);
 
-        Assert.Single(r.Stories.Requests);
-        Assert.Equal("light funny everyday story", r.Stories.Requests.Single().Query);
+        var learned = await r.User();
+        Assert.Contains("likes_humor", learned.ChatStyleProfile);
+        Assert.Contains("light_punctuation", learned.ChatStyleProfile);
 
-        var requests = r.Ai.Requests.ToArray();
-        Assert.Equal(2, requests.Length);
-        Assert.Contains(requests[1], x => x.Content.Contains("AllenAI SODA") && x.Content.Contains("train:123"));
+        await r.Text("/menu");
+        await r.Click("menu:talk");
+        await r.Text("привіт ще раз");
+        await r.Processor.Step(default);
 
-        var assistant = await r.Read(db => db.Messages.SingleAsync(x => x.Role == "assistant"));
-        Assert.Contains("train:123", assistant.SourcesJson);
-        Assert.Contains("двоє друзів", assistant.Text);
+        var latest = r.Ai.Requests.Last();
+        Assert.Contains(latest, x =>
+            x.Role == "system" &&
+            x.Content.Contains("гумор і дуркування заходять") &&
+            x.Content.Contains("легша пунктуація"));
+    }
+
+    [PostgresFact]
+    public async Task ClearMemoryAlsoClearsLearnedStyleProfile()
+    {
+        await using var r = new TestRig(); await r.Init(); await r.StartChat();
+        await r.WithDb(async db =>
+        {
+            var u = await db.Users.SingleAsync();
+            u.ChatStyleProfile = "likes_humor,light_punctuation";
+            await db.SaveChangesAsync();
+        });
+
+        await r.Text("/menu");
+        await r.Click("menu:settings");
+        await r.Click("settings:clear");
+        await r.Click("settings:clear:yes");
+
+        Assert.Equal("", (await r.User()).ChatStyleProfile);
     }
 
 }
