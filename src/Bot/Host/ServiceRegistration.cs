@@ -6,6 +6,7 @@ using Trivozhno.Features.Mood;
 using Trivozhno.Features.Navigation;
 using Trivozhno.Features.Reminders;
 using Trivozhno.Features.Settings;
+using Trivozhno.Features.Recommendations;
 using Trivozhno.Infrastructure.Groq;
 using Trivozhno.Infrastructure.Knowledge;
 using Trivozhno.Infrastructure.Persistence;
@@ -26,6 +27,8 @@ public static class ServiceRegistration
         services.AddHttpClient<ITelegramClient, TelegramClient>(c => c.Timeout = TimeSpan.FromSeconds(40)).RemoveAllLoggers();
         services.AddHttpClient<IAiClient, GroqClient>(c => c.Timeout = Timeout.InfiniteTimeSpan).RemoveAllLoggers();
         services.AddScoped<IKnowledgeRetriever, KnowledgeRetriever>(); services.AddScoped<IConversationMemory, ConversationMemory>();
+        services.AddSingleton<DialogueExamples>(); services.AddSingleton<MovieCatalog>();
+        services.AddScoped<ChatResponder>();
         services.AddScoped<BookImporter>(); services.AddScoped<Ui>(); services.AddScoped<DraftStore>(); services.AddScoped<Router>();
         services.AddScoped<ConversationHandler>(); services.AddScoped<ConfessionHandler>(); services.AddScoped<MoodHandler>();
         services.AddScoped<ReminderHandler>(); services.AddScoped<SettingsHandler>();
@@ -33,3 +36,4 @@ public static class ServiceRegistration
         return services;
     }
 }
+

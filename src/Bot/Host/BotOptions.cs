@@ -20,7 +20,7 @@ public sealed class BotOptions
     public int RequestsPerDay { get; init; } = 900;
     public int TokensPerDay { get; init; } = 190000;
     public int InputBudget { get; init; } = 4800;
-    public int TurnOutputBudget { get; init; } = 1800;
+    public int TurnOutputBudget { get; init; } = 1000;
     public int MaxQueue { get; init; } = 10000;
     public int MaxUserAiQueue { get; init; } = 20;
     public int TelegramPerSecond { get; init; } = 20;
@@ -38,14 +38,13 @@ public sealed class BotOptions
     {
         Database = c["DATABASE_URL"] ?? "", TelegramToken = c["TELEGRAM_BOT_TOKEN"] ?? "",
         GroqKey = c["GROQ_API_KEY"] ?? "", ChannelId = long.TryParse(c["CONFESSIONS_CHANNEL_ID"], out var id) ? id : 0,
-        Model = c["GROQ_MODEL"] ?? "openai/gpt-oss-120b", FallbackModel = c["GROQ_FALLBACK_MODEL"] ?? "openai/gpt-oss-120b",
-        SummaryModel = c["GROQ_SUMMARY_MODEL"] ?? "openai/gpt-oss-20b",
+        // Model selection lives in the property defaults above, not in Secrets.
         AiConcurrency = Int(c, "AI_MAX_CONCURRENCY", 2, 1, 16), AiTimeout = Int(c, "AI_TIMEOUT_SECONDS", 45, 1, 120),
         JobBudget = Int(c, "AI_JOB_BUDGET_SECONDS", 100, 10, 300), QueueWait = Int(c, "AI_MAX_QUEUE_WAIT_SECONDS", 300, 10, 3600),
         RequestsPerMinute = Int(c, "GROQ_RPM", 25, 1, 100000), TokensPerMinute = Int(c, "GROQ_TPM", 8000, 2000, 10000000),
         RequestsPerDay = Int(c, "GROQ_RPD", 900, 1, 10000000), TokensPerDay = Int(c, "GROQ_TPD", 190000, 2000, 100000000),
         InputBudget = Int(c, "AI_INPUT_TOKEN_BUDGET", 4800, 2000, 32000),
-        TurnOutputBudget = Int(c, "AI_TURN_OUTPUT_TOKEN_BUDGET", 1800, 1000, 4000),
+        TurnOutputBudget = Int(c, "AI_TURN_OUTPUT_TOKEN_BUDGET", 1000, 500, 4000),
         MaxQueue = Int(c, "MAX_INBOX_QUEUE", 10000, 100, 100000),
         MaxUserAiQueue = Int(c, "MAX_USER_AI_QUEUE", 20, 1, 100),
         ChunkSize = Int(c, "BOOK_CHUNK_CHARS", 1800, 1200, 2200), ChunkOverlap = Int(c, "BOOK_CHUNK_OVERLAP", 180, 0, 300),

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Trivozhno.Features.Memory;
+using Trivozhno.Features.Conversation;
 using Trivozhno.Features.Navigation;
 using Trivozhno.Infrastructure.Groq;
 using Trivozhno.Infrastructure.Persistence;
@@ -24,7 +25,7 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
         {
             using var scope = scopes.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<BotDb>();
-            var readyBefore = clock.UtcNow.AddMilliseconds(-1500);
+            var readyBefore = clock.UtcNow.AddMilliseconds(-300);
             job = await db.Messages.AsNoTracking().Where(x => x.Status == "queued" &&
                     x.CreatedAt <= readyBefore &&
                     !db.Messages.Any(y => y.UserId == x.UserId && (y.Status == "processing" || y.Status == "queued" && y.Id < x.Id)))
@@ -75,9 +76,10 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
 
         if (context is null || user is null || job is null) return true;
 
+        log.LogInformation("AI job {Operation}; queue wait {QueueMs} ms; input estimate {InputTokens}",
+            job.Id, (clock.UtcNow - job.CreatedAt).TotalMilliseconds, TokenEstimate.Count(context.Messages));
         var watch = Stopwatch.StartNew();
         AiResult? result = null;
-        IReadOnlyList<string> profileDelta = [];
         var metadata = ConversationMemory.BuildMetadata("", []);
         var error = "chat.error";
 
@@ -85,42 +87,20 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
         {
             try
             {
-                await scope.ServiceProvider.GetRequiredService<ITelegramClient>().Typing(user.TelegramId, ct);
-                var client = scope.ServiceProvider.GetRequiredService<IAiClient>();
-                var memory = scope.ServiceProvider.GetRequiredService<IConversationMemory>();
-
-                var first = await client.CompleteTurn(context.Messages, ct);
-                var augmented = await memory.Enrich(context, job, first.Turn, ct);
-                var final = first;
-                var totalTokens = first.Tokens;
-                var totalPrompt = 0;
-                var totalCompletion = 0;
-                var totalReasoning = 0;
-                var totalCached = 0;
-                var deltas = first.Turn.ProfileDelta.ToList();
-
-                if (!string.IsNullOrWhiteSpace(first.Turn.KnowledgeQuery))
+                // A typing indicator is cosmetic; its failure must not lose the reply.
+                try
                 {
-                    final = await client.CompleteTurn(augmented.Messages, ct);
-                    totalTokens += final.Tokens;
-                    deltas.AddRange(final.Turn.ProfileDelta);
+                    using var typing = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    typing.CancelAfter(TimeSpan.FromSeconds(2));
+                    await scope.ServiceProvider.GetRequiredService<ITelegramClient>().Typing(user.TelegramId, typing.Token);
                 }
-
-                if (string.IsNullOrWhiteSpace(final.Turn.Reply))
-                    throw new AiUnavailableException();
-
-                profileDelta = deltas;
-                result = new AiResult(
-                    final.Turn.Reply,
-                    final.Model,
-                    totalTokens,
-                    totalPrompt,
-                    totalCompletion,
-                    totalReasoning,
-                    totalCached);
-                metadata = ConversationMemory.BuildMetadata(
-                    final.Turn.ConversationState,
-                    augmented.Sources);
+                catch (Exception e) when (!ct.IsCancellationRequested)
+                {
+                    log.LogDebug("Typing indicator unavailable: {Category}", e.GetType().Name);
+                }
+                var reply = await scope.ServiceProvider.GetRequiredService<ChatResponder>().Reply(context, ct);
+                result = reply.Result;
+                metadata = ConversationMemory.BuildMetadata("", reply.Sources);
             }
             catch (ContextTooLargeException)
             {
@@ -128,7 +108,9 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             }
             catch (Exception e) when (!ct.IsCancellationRequested)
             {
-                log.LogWarning("AI job {Operation}: {Category}", job.Id, e.GetType().Name);
+                log.LogWarning("AI job {Operation}: {Category}; reason {Reason}", job.Id, e.GetType().Name,
+                    e is AiUnavailableException failure ? failure.Reason :
+                    e is OperationCanceledException ? "job_budget_exhausted" : "unexpected");
             }
         }
 
@@ -153,7 +135,6 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             else
             {
                 current.Status = "done";
-                u.ChatStyleProfile = ChatStyleProfile.Apply(u.ChatStyleProfile, profileDelta);
                 db.Messages.Add(new()
                 {
                     UserId = u.Id,
