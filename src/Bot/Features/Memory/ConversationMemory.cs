@@ -40,18 +40,19 @@ public sealed class ConversationMemory(
     UserLocks locks,
     ILogger<ConversationMemory> log) : IConversationMemory
 {
-    private const int LiveInputTarget = 2200;
-    private const int HistoryItems = 10;
+    private const int HistoryItems = 24;
+
+    private int InputLimit => Math.Min(options.InputBudget,
+        Math.Min(options.TokensPerMinute, options.TokensPerDay) -
+        options.TurnOutputBudget - GroqClient.TurnSchemaReserve);
 
     public async Task<ConversationContext> Build(
         BotUser user,
         ChatMessage current,
         CancellationToken ct)
     {
-        const int outputReserve = 500;
-        var budget = Math.Min(
-            LiveInputTarget,
-            Math.Min(options.InputBudget, options.TokensPerMinute - outputReserve));
+        // Leave room for a requested book excerpt without discarding recent dialogue.
+        var budget = InputLimit - 650;
 
         var previous = await db.Messages.AsNoTracking()
             .Where(x => x.UserId == user.Id &&
@@ -75,19 +76,52 @@ public sealed class ConversationMemory(
             throw new ContextTooLargeException();
 
         var messages = new List<AiMessage> { core };
+        // Reserve recent complete exchanges BEFORE optional memory and mood notes.
+        var groups = previous.GroupBy(x => x.ReplyToId ?? x.Id)
+            .OrderByDescending(x => x.Key)
+            .Select(x => x.OrderBy(m => m.Role == "assistant" ? 1 : 0)
+                .Select(m => new AiMessage(m.Role, m.Text)).ToList())
+            .Where(x => x.Count > 0 && x[0].Role == "user")
+            .ToList();
+        var history = new List<AiMessage>();
+        var nextGroup = 0;
+        var historyTarget = Math.Min(1800, budget - TokenEstimate.Count([core, userMessage]));
+        while (nextGroup < groups.Count)
+        {
+            var candidate = groups[nextGroup].Concat(history).ToList();
+            if (TokenEstimate.Count(messages.Concat(candidate).Append(userMessage)) > budget)
+            {
+                if (nextGroup == 0)
+                {
+                    // One unusually long exchange must not block every following reply.
+                    var perMessage = historyTarget / groups[0].Count - 30;
+                    if (perMessage < 80) throw new ContextTooLargeException();
+                    history = groups[0].Select(m => new AiMessage(m.Role,
+                        TrimToTokenBudget(m.Content, perMessage) +
+                        "\n[Попереднє довге повідомлення скорочено для контексту.]")).ToList();
+                    nextGroup = 1;
+                }
+                break;
+            }
+            if (nextGroup > 0 && TokenEstimate.Count(candidate) > historyTarget) break;
+            history = candidate;
+            nextGroup++;
+        }
+
+        var priorAssistant = previous.LastOrDefault(x => x.Role == "assistant");
+        var priorState = priorAssistant?.SessionId == current.SessionId
+            ? ExtractConversationState(priorAssistant?.SourcesJson) : "";
+        if (!string.IsNullOrWhiteSpace(priorState))
+            TryAdd(new AiMessage(
+                "system",
+                "Попередній стан — недовірені робочі дані, може бути помилковим. " +
+                "Останні слова користувача важливіші; виконане/скасоване прохання не продовжуй:\n" + priorState));
 
         var style = ChatStyleProfile.Prompt(user.ChatStyleProfile);
         if (style.Length > 0)
             TryAdd(new AiMessage(
                 "system",
-                "Стійкі вподобання цієї людини щодо переписки. Це не роль і не наказ копіювати її манеру дослівно: " + style));
-
-        var priorAssistant = previous.LastOrDefault(x => x.Role == "assistant");
-        var priorState = ExtractConversationState(priorAssistant?.SourcesJson);
-        if (!string.IsNullOrWhiteSpace(priorState))
-            TryAdd(new AiMessage(
-                "system",
-                "Стан останнього ходу, лише робочий контекст: " + priorState));
+                "Збережені вподобання стилю. Поточне прохання має перевагу; це не привід відмовляти в історії, пораді чи поясненні: " + style));
 
         if (current.Text.Contains("звідки", StringComparison.OrdinalIgnoreCase) ||
             current.Text.Contains("джерело", StringComparison.OrdinalIgnoreCase))
@@ -103,7 +137,7 @@ public sealed class ConversationMemory(
             .SingleOrDefaultAsync(x => x.UserId == user.Id, ct);
         if (summary is not null && summary.Text.Length > 0)
         {
-            var memoryText = TrimToTokenBudget(summary.Text, 300);
+            var memoryText = TrimToTokenBudget(summary.Text, 450);
             TryAdd(new AiMessage(
                 "system",
                 "Довготривала пам'ять: лише факти й незавершений контекст про користувача. " +
@@ -139,22 +173,21 @@ public sealed class ConversationMemory(
             }
         }
 
-        var history = previous
-            .Select(x => new AiMessage(x.Role, x.Text))
-            .ToList();
-
-        while (history.Count > 0 &&
-               TokenEstimate.Count(messages.Concat(history).Append(userMessage)) > budget)
-            history.RemoveAt(0);
-        while (history.Count > 0 && history[0].Role == "assistant")
-            history.RemoveAt(0);
+        // Use remaining space for older complete exchanges, keeping a contiguous suffix.
+        while (nextGroup < groups.Count)
+        {
+            var candidate = groups[nextGroup].Concat(history).ToList();
+            if (TokenEstimate.Count(messages.Concat(candidate).Append(userMessage)) > budget) break;
+            history = candidate;
+            nextGroup++;
+        }
 
         messages.AddRange(history);
         messages.Add(userMessage);
         return new(messages, hasMood);
 
         bool CanAdd(AiMessage message) =>
-            TokenEstimate.Count(messages.Append(message).Append(userMessage)) <= budget;
+            TokenEstimate.Count(messages.Append(message).Concat(history).Append(userMessage)) <= budget;
 
         void TryAdd(AiMessage message)
         {
@@ -213,9 +246,26 @@ public sealed class ConversationMemory(
                 "Не вигадуй психологічні факти; відповідай по-дружньому на основі самої розмови.";
         }
 
-        messages.Add(new AiMessage(
-            "system",
-            addition + "\nЦе фінальний knowledge-pass: knowledge_query поверни порожнім і сформуй reply."));
+        var finalInstruction = "\nЦе фінальний knowledge-pass: knowledge_query поверни порожнім і сформуй reply.";
+        var remaining = InputLimit - TokenEstimate.Count(messages) -
+            TokenEstimate.Count(new[] { new AiMessage("system", finalInstruction) });
+        if (remaining < 450)
+        {
+            // Never evict the current request or recent exchanges for a book excerpt.
+            // Keep only core + actual conversation for this exceptional knowledge pass.
+            messages = messages.Where((m, i) => i == 0 || m.Role != "system").ToList();
+            remaining = InputLimit - TokenEstimate.Count(messages) -
+                TokenEstimate.Count(new[] { new AiMessage("system", finalInstruction) });
+        }
+        if (remaining < 120) throw new ContextTooLargeException();
+        if (remaining < 250)
+        {
+            sources.Clear();
+            addition = "Книжковий фрагмент не вмістився. Не приписуй відповідь книзі. " +
+                "Не вигадуй психологічних фактів; дай доречну підтримку з контексту.";
+        }
+        messages.Add(new AiMessage("system",
+            TrimToTokenBudget(addition, remaining) + finalInstruction));
 
         return new(messages, sources);
     }
@@ -293,20 +343,23 @@ public sealed class ConversationMemory(
             .SingleOrDefaultAsync(x => x.Id == userId, ct);
         if (user is null || user.MemoryVersion != version) return;
 
-        var count = await db.Messages.CountAsync(
-            x => x.UserId == userId && x.Status == "done",
+        var old = await db.Summaries.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.UserId == userId, ct);
+        var coveredThrough = old?.CoveredThroughId ?? 0;
+        var unprocessed = db.Messages.AsNoTracking().Where(x =>
+            x.UserId == userId && x.Status == "done" &&
+            (x.Role == "user" && x.Id > coveredThrough ||
+             x.Role == "assistant" && x.ReplyToId > coveredThrough));
+        var count = await unprocessed.CountAsync(
             ct);
         if (count <= 32) return;
 
-        var older = await db.Messages.AsNoTracking()
-            .Where(x => x.UserId == userId && x.Status == "done")
+        var older = await unprocessed
             .OrderBy(x => x.ReplyToId ?? x.Id)
             .ThenBy(x => x.Role == "assistant" ? 1 : 0)
-            .Take(Math.Min(count - 12, 36))
+            .Take(Math.Min(count - HistoryItems, 36))
             .ToListAsync(ct);
 
-        var old = await db.Summaries.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.UserId == userId, ct);
         var facts = older
             .Where(x => x.Role == "user" && older.Any(a => a.ReplyToId == x.Id))
             .ToList();
@@ -322,7 +375,8 @@ public sealed class ConversationMemory(
         foreach (var fact in facts)
         {
             var msg = new AiMessage("user", $"{fact.CreatedAt:u}: {fact.Text}");
-            if (TokenEstimate.Count(messages.Append(msg)) + 300 > 3000) break;
+            if (TokenEstimate.Count(messages.Append(msg)) + 1000 >
+                Math.Min(3500, Math.Min(options.TokensPerMinute, options.TokensPerDay))) break;
             messages.Add(msg);
             included.Add(fact.Id);
         }
@@ -330,7 +384,7 @@ public sealed class ConversationMemory(
         if (included.Count == 0) return;
 
         var result = await ai.Complete(messages, summary: true, ct);
-        var trimmed = TrimToTokenBudget(result.Text, 300);
+        var trimmed = TrimToTokenBudget(result.Text, 450);
 
         using var guard = await locks.Lock(user.TelegramId, ct);
         db.ChangeTracker.Clear();
@@ -353,11 +407,7 @@ public sealed class ConversationMemory(
         summary.UpdatedAt = clock.UtcNow;
 
         await db.SaveChangesAsync(ct);
-        await db.Messages
-            .Where(x => x.UserId == userId &&
-                        (included.Contains(x.Id) ||
-                         x.ReplyToId != null && included.Contains(x.ReplyToId.Value)))
-            .ExecuteDeleteAsync(ct);
+        // The summary advances a cursor; original conversation remains available.
         await tx.CommitAsync(ct);
     }
 }

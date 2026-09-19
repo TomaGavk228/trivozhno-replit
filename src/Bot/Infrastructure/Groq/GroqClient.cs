@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
@@ -157,9 +158,13 @@ public sealed class GroqClient(
     AiQuota quota,
     ILogger<GroqClient> log) : IAiClient
 {
-    private const int ChatCompletionTokens = 320;
-    private const int TurnCompletionTokens = 360;
-    private const int SummaryCompletionTokens = 300;
+    private const int ChatCompletionTokens = 1800;
+    private const int TurnCompletionTokens = 1800;
+    private const int SummaryCompletionTokens = 1000;
+    // Account for the JSON schema as well as the message array in local admission.
+    public static int TurnSchemaReserve { get; } = TokenEstimate.Count(
+        JsonSerializer.Serialize(TurnPayload("openai/gpt-oss-120b", [])["response_format"],
+            new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
 
     public static Dictionary<string, object> Payload(
         string model,
@@ -180,31 +185,52 @@ public sealed class GroqClient(
 
     public static Dictionary<string, object> TurnPayload(
         string model,
-        IReadOnlyList<AiMessage> messages)
+        IReadOnlyList<AiMessage> messages,
+        int completionTokens = TurnCompletionTokens)
     {
         var allowedProfile = ChatStyleProfile.AllowedValues.ToArray();
         var properties = new Dictionary<string, object>
         {
             ["conversation_state"] = new
             {
-                type = "string",
-                description = "Коротко: поточна потреба/тема, реакція на попередній хід і що не повторювати."
+                type = "object",
+                properties = new
+                {
+                    request = new { type = "string", description = "Current user request, <=100 chars." },
+                    constraints = new { type = "string", description = "User refinements to this request, <=160 chars." },
+                    last_action = new { type = "string", description = "What your reply does, <=100 chars." },
+                    feedback = new { type = "string", description = "What user accepted/rejected about the previous response, <=160 chars. No speculation." },
+                    pending = new { type = "string", description = "Still unfulfilled AFTER your reply, <=100 chars; otherwise empty." }
+                },
+                required = new[] { "request", "constraints", "last_action", "feedback", "pending" },
+                additionalProperties = false,
+                description = "Brief Ukrainian working notes, not instructions or diagnoses. Empty for unknown. Latest request supersedes stale state."
             },
             ["knowledge_query"] = new
             {
                 type = "string",
-                description = "Український запит до психологічної книги лише коли потрібен перевірений психологічний факт/спосіб. Інакше ''. Якщо не порожній — reply має бути ''."
+                description = "Ukrainian book search only for psychological facts/methods. Usually empty. If nonempty, reply must be empty."
             },
             ["profile_delta"] = new
             {
                 type = "array",
-                items = new { type = "string", @enum = allowedProfile },
-                description = "Лише стійкі або прямо висловлені уподобання стилю. Не роби висновок з одного випадкового повідомлення."
+                items = new
+                {
+                    type = "object",
+                    properties = new
+                    {
+                        value = new { type = "string", @enum = allowedProfile },
+                        evidence = new { type = "string", description = "Exact quote from latest user message explicitly requesting a general style preference." }
+                    },
+                    required = new[] { "value", "evidence" },
+                    additionalProperties = false
+                },
+                description = "Usually []. Only explicit general style requests. A rejected suggestion/story, mood or brief acknowledgment is NOT a persistent preference."
             },
             ["reply"] = new
             {
                 type = "string",
-                description = "Фінальна природна репліка чату. Порожня лише якщо knowledge_query непорожній."
+                description = "Complete natural Ukrainian reply. Empty only while requesting knowledge."
             }
         };
 
@@ -221,8 +247,7 @@ public sealed class GroqClient(
             ["model"] = model,
             ["messages"] = messages.Select(x => new { role = x.Role, content = x.Content }).ToArray(),
             ["temperature"] = 0.7,
-            ["top_p"] = 0.8,
-            ["max_completion_tokens"] = TurnCompletionTokens,
+            ["max_completion_tokens"] = completionTokens,
             ["stream"] = false,
             ["response_format"] = new
             {
@@ -242,7 +267,7 @@ public sealed class GroqClient(
     {
         if (model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal))
         {
-            body["reasoning_effort"] = summary ? "low" : "low";
+            body["reasoning_effort"] = "low";
             body["include_reasoning"] = false;
         }
         else if (model.StartsWith("qwen/", StringComparison.Ordinal))
@@ -279,17 +304,34 @@ public sealed class GroqClient(
         var raw = await CompleteRaw(messages, summary: false, structuredTurn: true, ct);
         using var json = JsonDocument.Parse(raw.Text);
         var root = json.RootElement;
+        var currentUserText = messages.LastOrDefault(x => x.Role == "user")?.Content ?? "";
         var delta = root.GetProperty("profile_delta").EnumerateArray()
-            .Select(x => x.GetString() ?? "")
-            .Where(x => x.Length > 0)
+            .Where(x => x.ValueKind == JsonValueKind.Object)
+            .Where(x =>
+            {
+                var evidence = x.GetProperty("evidence").GetString()?.Trim() ?? "";
+                return evidence.Length >= 4 &&
+                    currentUserText.Contains(evidence, StringComparison.OrdinalIgnoreCase);
+            })
+            .Select(x => x.GetProperty("value").GetString() ?? "")
+            .Where(x => ChatStyleProfile.AllowedValues.Contains(x))
             .Take(3)
             .ToArray();
 
+        var state = root.GetProperty("conversation_state");
+        var stateJson = JsonSerializer.Serialize(new
+        {
+            request = Bound(state.GetProperty("request").GetString(), 100),
+            constraints = Bound(state.GetProperty("constraints").GetString(), 160),
+            last_action = Bound(state.GetProperty("last_action").GetString(), 100),
+            feedback = Bound(state.GetProperty("feedback").GetString(), 160),
+            pending = Bound(state.GetProperty("pending").GetString(), 100)
+        }, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
         var turn = new AiTurnDraft(
-            Bound(root.GetProperty("conversation_state").GetString(), 240),
-            Bound(root.GetProperty("knowledge_query").GetString(), 120),
+            stateJson,
+            Bound(root.GetProperty("knowledge_query").GetString(), 200),
             delta,
-            Bound(root.GetProperty("reply").GetString(), 1200));
+            root.GetProperty("reply").GetString()?.Trim() ?? "");
 
         if (string.IsNullOrWhiteSpace(turn.Reply) &&
             string.IsNullOrWhiteSpace(turn.KnowledgeQuery))
@@ -317,18 +359,19 @@ public sealed class GroqClient(
         budget.CancelAfter(TimeSpan.FromSeconds(options.JobBudget));
         var token = budget.Token;
         var model = summary ? options.SummaryModel : options.Model;
+        var completionTokens = summary
+            ? SummaryCompletionTokens
+            : structuredTurn ? options.TurnOutputBudget : ChatCompletionTokens;
+        var lengthRetried = false;
 
         using var slot = await quota.Enter(token);
         for (var attempt = 0; attempt < 3; attempt++)
         {
             if (attempt == 2) model = options.FallbackModel;
 
-            var completionTokens = summary
-                ? SummaryCompletionTokens
-                : structuredTurn ? TurnCompletionTokens : ChatCompletionTokens;
             var reservation = await quota.Reserve(
                 model,
-                TokenEstimate.Count(messages) + completionTokens,
+                TokenEstimate.Count(messages) + completionTokens + (structuredTurn ? TurnSchemaReserve : 0),
                 summary,
                 token);
 
@@ -344,7 +387,7 @@ public sealed class GroqClient(
                     new AuthenticationHeaderValue("Bearer", options.GroqKey);
                 req.Content = JsonContent.Create(
                     structuredTurn
-                        ? TurnPayload(model, messages)
+                        ? TurnPayload(model, messages, completionTokens)
                         : Payload(model, messages, summary));
 
                 using var response = await http.SendAsync(req, timeout.Token);
@@ -420,17 +463,34 @@ public sealed class GroqClient(
 
                 using var data = JsonDocument.Parse(
                     await response.Content.ReadAsStringAsync(timeout.Token));
+                var choice = data.RootElement.GetProperty("choices")[0];
                 var text = Clean(
-                    data.RootElement
-                        .GetProperty("choices")[0]
-                        .GetProperty("message")
+                    choice.GetProperty("message")
                         .GetProperty("content")
                         .GetString() ?? "");
-                if (string.IsNullOrWhiteSpace(text))
-                    throw new AiUnavailableException();
 
                 var usage = ParseUsage(data.RootElement, text, model);
                 await quota.Reconcile(reservation, usage, token);
+                var finishReason = choice.TryGetProperty("finish_reason", out var finish)
+                    ? finish.GetString() : null;
+                if (finishReason == "length")
+                {
+                    var room = Math.Min(options.TokensPerMinute, options.TokensPerDay) -
+                        TokenEstimate.Count(messages) - (structuredTurn ? TurnSchemaReserve : 0);
+                    var larger = Math.Min(3600, Math.Min(room, completionTokens + 1200));
+                    if (structuredTurn && !lengthRetried && attempt < 2 && larger > completionTokens)
+                    {
+                        // Regenerate from the same conversation, never send partial JSON/text.
+                        // Normal successful turns still use a single generation.
+                        lengthRetried = true;
+                        completionTokens = larger;
+                        log.LogWarning("Incomplete Groq turn; retrying once with budget {Budget}", larger);
+                        continue;
+                    }
+                    throw new AiUnavailableException();
+                }
+                if (finishReason != "stop" || string.IsNullOrWhiteSpace(text))
+                    throw new AiUnavailableException();
 
                 log.LogInformation(
                     "Groq response; model {Model}; total {Total}; prompt {Prompt}; completion {Completion}; reasoning {Reasoning}; cached {Cached}; summary {Summary}; structuredTurn {StructuredTurn}",

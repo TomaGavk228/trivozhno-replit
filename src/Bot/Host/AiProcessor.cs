@@ -99,7 +99,7 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
                 var totalCached = 0;
                 var deltas = first.Turn.ProfileDelta.ToList();
 
-                if (augmented.Messages.Count > context.Messages.Count)
+                if (!string.IsNullOrWhiteSpace(first.Turn.KnowledgeQuery))
                 {
                     final = await client.CompleteTurn(augmented.Messages, ct);
                     totalTokens += final.Tokens;
