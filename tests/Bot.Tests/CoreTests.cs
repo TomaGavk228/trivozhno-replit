@@ -55,7 +55,7 @@ public sealed class CoreTests
         var oss = GroqClient.Payload("openai/gpt-oss-120b", [new("user", "Привіт")], false);
         var qwen = GroqClient.Payload("qwen/qwen3.6-27b", [new("user", "Привіт")], false);
         Assert.Equal(false, oss["include_reasoning"]); Assert.False(oss.ContainsKey("reasoning_format"));
-        Assert.Equal("hidden", qwen["reasoning_format"]); Assert.False(qwen.ContainsKey("include_reasoning"));
+        Assert.Equal("none", qwen["reasoning_effort"]); Assert.False(qwen.ContainsKey("include_reasoning")); Assert.False(qwen.ContainsKey("reasoning_format"));
         Assert.Equal("Привіт!", GroqClient.Clean("<think>internal text</think>Привіт!"));
         Assert.Equal("", GroqClient.Clean("<think>unfinished"));
     }

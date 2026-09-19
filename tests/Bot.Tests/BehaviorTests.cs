@@ -179,15 +179,135 @@ public sealed class BehaviorTests
         await r.Text("/menu"); await r.Click("menu:confession"); Assert.Equal(UserState.ConfessionDraft, (await r.User()).State);
     }
     [PostgresFact]
-    public async Task SummaryFailureKeepsMessagesAndSuccessfulSummaryRetainsRecentTen()
+    public async Task SummaryFailureKeepsMessagesAndSuccessfulSummaryRetainsRecentTwelve()
     {
         await using var r = new TestRig(); await r.Init(); await r.StartChat();
-        for (var i = 0; i < 12; i++) { await r.Text("Думка " + i); await r.Processor.Step(default); }
+        for (var i = 0; i < 18; i++) { await r.Text("Думка " + i); await r.Processor.Step(default); }
         var u = await r.User(); r.Ai.Fail = true;
         using (var s = r.Services.CreateScope()) await Assert.ThrowsAsync<AiUnavailableException>(() => s.ServiceProvider.GetRequiredService<IConversationMemory>().Summarize(u.Id, u.MemoryVersion, default));
-        Assert.Equal(24, await r.Read(db => db.Messages.CountAsync()));
+        Assert.Equal(36, await r.Read(db => db.Messages.CountAsync()));
         r.Ai.Fail = false;
         using (var s = r.Services.CreateScope()) await s.ServiceProvider.GetRequiredService<IConversationMemory>().Summarize(u.Id, u.MemoryVersion, default);
-        Assert.Equal(10, await r.Read(db => db.Messages.CountAsync())); Assert.Equal(1, await r.Read(db => db.Summaries.CountAsync()));
+        Assert.Equal(12, await r.Read(db => db.Messages.CountAsync())); Assert.Equal(1, await r.Read(db => db.Summaries.CountAsync()));
     }
+    [PostgresFact]
+    public async Task ConversationStateFromPreviousTurnIsPassedIntoNextTurn()
+    {
+        await using var r = new TestRig(); await r.Init(); await r.StartChat();
+        r.Ai.TurnDrafts.Enqueue(new(
+            "користувач відкинув пораду; не тиснути питаннями; краще переключити розмову",
+            "", [], "ок, тоді без порад"));
+
+        await r.Text("нічого не хочу");
+        await r.Processor.Step(default);
+
+        await r.Text("і шо");
+        await r.Processor.Step(default);
+
+        var second = r.Ai.Requests.ToArray()[1];
+        Assert.Contains(second, x => x.Role == "system" &&
+            x.Content.Contains("користувач відкинув пораду") &&
+            x.Content.Contains("не тиснути питаннями"));
+    }
+
+    [PostgresFact]
+    public async Task BookGroundingHappensOnlyAfterModelRequestsKnowledge()
+    {
+        await using var r = new TestRig(); await r.Init(); await r.StartChat();
+        var u = await r.User();
+        await r.WithDb(async db =>
+        {
+            var source = new KnowledgeSource
+            {
+                Title = "Перевірена психологічна книга",
+                Hash = "human-chat-v3-book",
+                Active = true,
+                ImportedAt = r.Clock.UtcNow
+            };
+            db.Sources.Add(source);
+            await db.SaveChangesAsync();
+            db.Chunks.Add(new KnowledgeChunk
+            {
+                SourceId = source.Id,
+                Ordinal = 0,
+                PageStart = 10,
+                PageEnd = 11,
+                Text = "Короткий перевірений фрагмент про тривогу і способи зменшення напруги.",
+                Terms = ["тривога", "напруга"]
+            });
+            await db.SaveChangesAsync();
+        });
+
+        r.Ai.TurnDrafts.Enqueue(new(
+            "користувач прямо попросив конкретний спосіб заспокоїтися",
+            "тривога напруга", [], ""));
+        r.Ai.TurnDrafts.Enqueue(new(
+            "користувач попросив допомогу; відповіли коротко без лекції",
+            "", [], "я б почав з однієї простої речі, без десяти вправ одразу"));
+
+        await r.Text("що мені робити щоб заспокоїтися?");
+        await r.Processor.Step(default);
+
+        var requests = r.Ai.Requests.ToArray();
+        Assert.Equal(2, requests.Length);
+        Assert.Contains(requests[1], x => x.Role == "system" &&
+            x.Content.Contains("НЕДОВІРЕНІ ДАНІ З КНИГИ") &&
+            x.Content.Contains("не змінюй голос друга на психолога"));
+
+        var assistant = await r.Read(db => db.Messages.SingleAsync(x => x.Role == "assistant"));
+        using var metadata = System.Text.Json.JsonDocument.Parse(assistant.SourcesJson);
+        Assert.Equal("Перевірена психологічна книга",
+            metadata.RootElement.GetProperty("sources")[0].GetProperty("title").GetString());
+    }
+
+
+    [PostgresFact]
+    public async Task StableStylePreferencePersistsAcrossChatSessions()
+    {
+        await using var r = new TestRig(); await r.Init(); await r.StartChat();
+
+        r.Ai.TurnDrafts.Enqueue(new(
+            "користувач прямо сказав, що йому заходить невимушений гумор",
+            "",
+            ["likes_humor", "light_punctuation"],
+            "ахах, окей"));
+
+        await r.Text("оце вже норм, так прикольніше");
+        await r.Processor.Step(default);
+
+        var learned = await r.User();
+        Assert.Contains("likes_humor", learned.ChatStyleProfile);
+        Assert.Contains("light_punctuation", learned.ChatStyleProfile);
+
+        await r.Text("/menu");
+        await r.Click("menu:talk");
+        await r.Text("привіт ще раз");
+        await r.Processor.Step(default);
+
+        var latest = r.Ai.Requests.Last();
+        Assert.Contains(latest, x =>
+            x.Role == "system" &&
+            x.Content.Contains("гумор і дуркування заходять") &&
+            x.Content.Contains("легша пунктуація"));
+    }
+
+    [PostgresFact]
+    public async Task ClearMemoryAlsoClearsLearnedStyleProfile()
+    {
+        await using var r = new TestRig(); await r.Init(); await r.StartChat();
+        await r.WithDb(async db =>
+        {
+            var u = await db.Users.SingleAsync();
+            u.ChatStyleProfile = "likes_humor,light_punctuation";
+            await db.SaveChangesAsync();
+        });
+
+        await r.Text("/menu");
+        await r.Click("menu:settings");
+        await r.Click("settings:clear");
+        await r.Click("settings:clear:yes");
+
+        Assert.Equal("", (await r.User()).ChatStyleProfile);
+    }
+
 }
