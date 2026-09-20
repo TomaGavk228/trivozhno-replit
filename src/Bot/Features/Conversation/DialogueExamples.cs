@@ -44,7 +44,7 @@ public sealed class DialogueExamples
         var ranked = examples.Select((example, index) => new
             { Example = example, Index = index, Score = Score(example, latest, previous) })
             .Where(x => x.Example.Enabled).OrderByDescending(x => x.Score).ThenBy(x => x.Index).ToArray();
-        var text = new StringBuilder("Це окремі вигадані або адаптовані зразки манери розмови. " +
+        var text = new StringBuilder("Це знеособлені фрагменти окремих розмов, що показують манеру переписки. " +
             "Вони не описують поточного користувача. Перенось спосіб реагування, не сюжети, факти чи готові репліки.\n");
         var included = new List<int>();
 
