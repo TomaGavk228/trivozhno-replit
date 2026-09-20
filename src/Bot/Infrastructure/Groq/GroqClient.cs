@@ -19,6 +19,14 @@ public sealed partial class GroqClient(
         bool structuredTurn,
         CancellationToken ct)
     {
+        // Normalize before quota accounting, payload generation and request logs.
+        // Payload builders also normalize for direct callers; Prepare is idempotent.
+        var originalInstructionBlocks = messages.Count(m => m.Role is "system" or "developer");
+        messages = GroqMessageLayout.Prepare(messages);
+        log.LogInformation("Groq layout; instruction blocks {Before} -> {After}; instruction chars {Chars}; last role {LastRole}",
+            originalInstructionBlocks, messages.Count(m => m.Role == "system"),
+            messages.FirstOrDefault(m => m.Role == "system")?.Content.Length ?? 0,
+            messages.LastOrDefault()?.Role ?? "none");
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
         budget.CancelAfter(TimeSpan.FromSeconds(options.JobBudget));
         var token = budget.Token;

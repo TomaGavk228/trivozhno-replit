@@ -21,6 +21,7 @@ public sealed partial class GroqClient
         IReadOnlyList<AiMessage> messages,
         bool summary)
     {
+        messages = GroqMessageLayout.Prepare(messages);
         var body = new Dictionary<string, object>
         {
             ["model"] = model,
@@ -38,6 +39,7 @@ public sealed partial class GroqClient
         IReadOnlyList<AiMessage> messages,
         int completionTokens = TurnCompletionTokens)
     {
+        messages = GroqMessageLayout.Prepare(messages);
         var allowedProfile = ChatStyleProfile.AllowedValues.ToArray();
         var properties = new Dictionary<string, object>
         {
