@@ -50,11 +50,11 @@ public sealed class AiQuota(IServiceScopeFactory scopes, BotOptions options, ICl
                 var shortWindow = recent.Where(x => x.At > minute).ToArray();
 
                 if (recent.Count >= options.RequestsPerDay ||
-                    recent.Sum(x => x.Tokens) + tokens > options.TokensPerDay)
+                    recent.Sum(RateLimitTokens) + tokens > options.TokensPerDay)
                     throw new AiUnavailableException();
 
                 if (shortWindow.Length < options.RequestsPerMinute &&
-                    shortWindow.Sum(x => x.Tokens) + tokens <= options.TokensPerMinute)
+                    shortWindow.Sum(RateLimitTokens) + tokens <= options.TokensPerMinute)
                 {
                     var row = new ApiUsage
                     {
@@ -94,6 +94,11 @@ public sealed class AiQuota(IServiceScopeFactory scopes, BotOptions options, ICl
             .SetProperty(y => y.CachedTokens, usage.CachedTokens), ct);
     }
 
+    // Groq excludes cached prompt tokens from rate limits. Keep original usage in
+    // the database for telemetry; unreconciled reservations still count in full.
+    private static int RateLimitTokens(ApiUsage usage) => Math.Max(0, usage.Tokens -
+        Math.Clamp(usage.CachedTokens, 0, Math.Max(0, Math.Min(usage.PromptTokens, usage.Tokens))));
+
     public async Task Release(long id, CancellationToken ct)
     {
         using var scope = scopes.CreateScope();
@@ -101,4 +106,3 @@ public sealed class AiQuota(IServiceScopeFactory scopes, BotOptions options, ICl
         await db.Set<ApiUsage>().Where(x => x.Id == id).ExecuteDeleteAsync(ct);
     }
 }
-

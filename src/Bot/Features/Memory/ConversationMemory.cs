@@ -186,6 +186,14 @@ public sealed class ConversationMemory(
 
         messages.AddRange(history);
         messages.Add(userMessage);
+        // Describe the actual context without logging private messages or their hashes.
+        log.LogInformation("Chat context {Operation}; current chars {Chars}; history items {HistoryItems}; " +
+            "history loaded {Loaded}; system blocks {SystemBlocks}; style profile {HasStyle}; " +
+            "summary present {HasSummary}; mood included {HasMood}; current preserved {CurrentPreserved}",
+            current.Id, current.Text.Length, history.Count, previous.Count,
+            messages.Count(m => m.Role == "system"), style.Length > 0,
+            summary is not null && summary.Text.Length > 0, hasMood,
+            messages[^1].Role == "user" && string.Equals(messages[^1].Content, current.Text, StringComparison.Ordinal));
         return new(messages, hasMood);
 
         bool CanAdd(AiMessage message) =>

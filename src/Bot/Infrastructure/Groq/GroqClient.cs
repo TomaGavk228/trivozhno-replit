@@ -58,6 +58,10 @@ public sealed partial class GroqClient(
                     : Payload(model, messages, summary);
                 payload["max_completion_tokens"] = completionTokens;
                 req.Content = JsonContent.Create(payload);
+                log.LogInformation("Groq request; model {Model}; reasoning {Effort}; roles {Roles}; last user chars {UserChars}",
+                    model, payload.GetValueOrDefault("reasoning_effort") ?? "default",
+                    string.Join(',', messages.Select(m => m.Role)),
+                    messages.LastOrDefault(m => m.Role == "user")?.Content.Length ?? 0);
 
                 var network = Stopwatch.StartNew();
                 using var response = await http.SendAsync(req, timeout.Token);
@@ -67,7 +71,27 @@ public sealed partial class GroqClient(
                 if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
                 {
                     await quota.Reconcile(reservation, new("", model, 0), token);
-                    throw new AiUnavailableException("authentication");
+                    if (response.StatusCode == HttpStatusCode.Unauthorized)
+                        throw new AiUnavailableException("authentication");
+                    var reason = "permission_denied";
+                    try
+                    {
+                        using var denied = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
+                        if (denied.RootElement.ValueKind == JsonValueKind.Object &&
+                            denied.RootElement.TryGetProperty("error", out var error) &&
+                            error.ValueKind == JsonValueKind.Object && error.TryGetProperty("code", out var code) &&
+                            code.ValueKind == JsonValueKind.String)
+                            reason = code.GetString() switch
+                            {
+                                "model_permission_blocked_org" => "model_permission_blocked_org",
+                                "model_permission_blocked_project" => "model_permission_blocked_project",
+                                _ => "permission_denied"
+                            };
+                    }
+                    catch (JsonException) { /* A non-JSON 403 is still an access denial. */ }
+                    log.LogWarning("Groq access denied; model {Model}; reason {Reason}", model, reason);
+                    // Do not retry another model to work around a permission denial.
+                    throw new AiUnavailableException(reason);
                 }
 
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
