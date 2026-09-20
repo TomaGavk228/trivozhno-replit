@@ -143,7 +143,7 @@ public sealed class ConversationMemory(
 
         var exampleBudget = Math.Min(1400,
             budget - TokenEstimate.Count(messages.Concat(history).Append(userMessage)) - 30);
-        var demonstration = demonstrations.Build(Math.Max(0, exampleBudget));
+        var demonstration = demonstrations.Build(Math.Max(0, exampleBudget), history.Append(userMessage).ToArray());
         if (demonstration.Length > 0) TryAdd(new AiMessage("system", demonstration));
 
         var hasMood = false;
