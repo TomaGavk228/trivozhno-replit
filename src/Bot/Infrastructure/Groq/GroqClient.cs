@@ -31,9 +31,10 @@ public sealed partial class GroqClient(
         budget.CancelAfter(TimeSpan.FromSeconds(options.JobBudget));
         var token = budget.Token;
         var model = summary ? options.SummaryModel : options.Model;
+        var briefChat = !summary && !structuredTurn && !ChatReplyBudget.WantsDetail(messages);
         var completionTokens = summary
             ? SummaryCompletionTokens
-            : options.TurnOutputBudget;
+            : structuredTurn ? options.TurnOutputBudget : ChatReplyBudget.Limit(messages, options.TurnOutputBudget);
         var lengthRetried = false;
 
         var admission = Stopwatch.StartNew();
@@ -44,11 +45,13 @@ public sealed partial class GroqClient(
             if (attempt == 2) model = options.FallbackModel;
 
             admission.Restart();
+            var inputEstimate = TokenEstimate.Count(messages) + (structuredTurn ? TurnSchemaReserve : 0);
             var reservation = await quota.Reserve(
                 model,
-                TokenEstimate.Count(messages) + completionTokens + (structuredTurn ? TurnSchemaReserve : 0),
+                inputEstimate + completionTokens,
                 summary,
-                token);
+                token,
+                inputEstimate);
 
             log.LogInformation("Groq quota admission {ElapsedMs} ms", admission.ElapsedMilliseconds);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -66,8 +69,9 @@ public sealed partial class GroqClient(
                     : Payload(model, messages, summary);
                 payload["max_completion_tokens"] = completionTokens;
                 req.Content = JsonContent.Create(payload);
-                log.LogInformation("Groq request; model {Model}; reasoning {Effort}; roles {Roles}; last user chars {UserChars}",
+                log.LogInformation("Groq request; model {Model}; reasoning {Effort}; output budget {Budget}; roles {Roles}; last user chars {UserChars}",
                     model, payload.GetValueOrDefault("reasoning_effort") ?? "default",
+                    completionTokens,
                     string.Join(',', messages.Select(m => m.Role)),
                     messages.LastOrDefault(m => m.Role == "user")?.Content.Length ?? 0);
 
@@ -75,10 +79,11 @@ public sealed partial class GroqClient(
                 using var response = await http.SendAsync(req, timeout.Token);
                 log.LogInformation("Groq HTTP {Status}; model {Model}; elapsed {ElapsedMs} ms", (int)response.StatusCode, model, network.ElapsedMilliseconds);
                 LogRateHeaders(response, model);
+                var rateSnapshot = GroqRateSnapshot.Read(response.Headers);
 
                 if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
                 {
-                    await quota.Reconcile(reservation, new("", model, 0), token);
+                    await quota.Reconcile(reservation, new("", model, 0), token, rateSnapshot);
                     if (response.StatusCode == HttpStatusCode.Unauthorized)
                         throw new AiUnavailableException("authentication");
                     var reason = "permission_denied";
@@ -108,11 +113,9 @@ public sealed partial class GroqClient(
                         response.Headers.RetryAfter?.Delta ??
                         (response.Headers.RetryAfter?.Date - DateTimeOffset.UtcNow) ??
                         TimeSpan.FromSeconds(5);
-                    await quota.Reconcile(reservation, new("", model, 0), token);
+                    await quota.BackOff(model, retry, token);
+                    await quota.Reconcile(reservation, new("", model, 0), token, rateSnapshot);
                     log.LogWarning("Groq rate limited; model {Model}", model);
-                    await Task.Delay(
-                        retry > TimeSpan.Zero ? retry : TimeSpan.FromSeconds(1),
-                        token);
                     continue;
                 }
 
@@ -131,11 +134,11 @@ public sealed partial class GroqClient(
                     if (code == "json_validate_failed")
                     {
                         var used = ParseUsage(error.RootElement, "", model);
-                        if (used.Tokens > 0) await quota.Reconcile(reservation, used, token);
+                        if (used.Tokens > 0) await quota.Reconcile(reservation, used, token, rateSnapshot);
                         log.LogWarning("Groq rejected generated JSON; model {Model}", model);
                         throw new AiUnavailableException("json_validate_failed");
                     }
-                    await quota.Reconcile(reservation, new("", model, 0), token);
+                    await quota.Reconcile(reservation, new("", model, 0), token, rateSnapshot);
                     if (code is "model_not_found" or "model_decommissioned" or "model_not_supported" ||
                         response.StatusCode == HttpStatusCode.NotFound)
                     {
@@ -169,15 +172,24 @@ public sealed partial class GroqClient(
                         .GetString() ?? "");
 
                 var usage = ParseUsage(data.RootElement, text, model);
-                if (usage.Tokens > 0) await quota.Reconcile(reservation, usage, token);
+                if (usage.Tokens > 0) await quota.Reconcile(reservation, usage, token, rateSnapshot);
                 var finishReason = choice.TryGetProperty("finish_reason", out var finish)
                     ? finish.GetString() : null;
                 if (finishReason == "length")
                 {
+                    if (briefChat && !lengthRetried && attempt < 2)
+                    {
+                        // Retry only an unfinished response, once, with the SAME allowance.
+                        // Never turn a short advice request into a larger generation.
+                        lengthRetried = true;
+                        messages = ChatReplyBudget.CompactRetry(messages);
+                        log.LogWarning("Incomplete brief reply; compact retry with unchanged budget {Budget}", completionTokens);
+                        continue;
+                    }
                     var room = Math.Min(options.TokensPerMinute, options.TokensPerDay) -
                         TokenEstimate.Count(messages) - (structuredTurn ? TurnSchemaReserve : 0);
                     var larger = Math.Min(3600, Math.Min(room, completionTokens + 1200));
-                    if (!summary && !lengthRetried && attempt < 2 && larger > completionTokens)
+                    if (!summary && !briefChat && !lengthRetried && attempt < 2 && larger > completionTokens)
                     {
                         // Regenerate from the same conversation, never send partial JSON/text.
                         // Normal successful turns still use a single generation.
@@ -213,6 +225,12 @@ public sealed partial class GroqClient(
             catch (JsonException)
             {
                 throw new AiUnavailableException("invalid_response_json");
+            }
+            finally
+            {
+                // Reconciled requests are already removed. Failed/cancelled calls
+                // retain conservative usage, but must not become permanent holds.
+                await quota.Abandon(reservation);
             }
         }
 

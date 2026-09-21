@@ -8,7 +8,7 @@ namespace Trivozhno.Infrastructure.Groq;
 // Structured-turn API retained for existing callers; live chat uses plain Complete.
 public sealed partial class GroqClient
 {
-    private const int ChatCompletionTokens = 1800;
+    private const int ChatCompletionTokens = 1000;
     private const int TurnCompletionTokens = 1800;
     private const int SummaryCompletionTokens = 1000;
     // Account for the JSON schema as well as the message array in local admission.
@@ -27,7 +27,7 @@ public sealed partial class GroqClient
             ["model"] = model,
             ["messages"] = messages.Select(x => new { role = x.Role, content = x.Content }).ToArray(),
             ["temperature"] = summary ? 0.15 : 0.72,
-            ["max_completion_tokens"] = summary ? SummaryCompletionTokens : ChatCompletionTokens,
+            ["max_completion_tokens"] = summary ? SummaryCompletionTokens : ChatReplyBudget.Limit(messages, ChatCompletionTokens),
             ["stream"] = false
         };
         AddReasoning(body, model, structuredTurn: false, summary);
