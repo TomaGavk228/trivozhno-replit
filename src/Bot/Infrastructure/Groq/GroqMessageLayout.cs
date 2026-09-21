@@ -5,6 +5,17 @@ namespace Trivozhno.Infrastructure.Groq;
 // on a provider combining them: assemble the application context explicitly.
 public static class GroqMessageLayout
 {
+    public static IReadOnlyList<AiMessage> WithExamples(IReadOnlyList<AiMessage> messages,
+        IReadOnlyList<AiMessage> examples)
+    {
+        var prepared = Prepare(messages);
+        if (examples.Count == 0) return prepared;
+        // The only initial system contains all application instructions/reference
+        // blocks. Examples are actual role pairs, before the untouched real chat.
+        var instructionCount = prepared.Count > 0 && prepared[0].Role == "system" ? 1 : 0;
+        return [.. prepared.Take(instructionCount), .. examples, .. prepared.Skip(instructionCount)];
+    }
+
     public static IReadOnlyList<AiMessage> Prepare(IReadOnlyList<AiMessage> messages)
     {
         var instructions = messages.Where(IsInstruction).ToArray();

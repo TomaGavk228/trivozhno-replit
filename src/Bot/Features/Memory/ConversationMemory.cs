@@ -9,7 +9,11 @@ using Trivozhno.Resources;
 
 namespace Trivozhno.Features.Memory;
 
-public sealed record ConversationContext(IReadOnlyList<AiMessage> Messages, bool HasMood);
+// Demonstrations are kept outside real history and all retrieval queries.
+public sealed record ConversationContext(IReadOnlyList<AiMessage> Messages, bool HasMood)
+{
+    public IReadOnlyList<AiMessage> Examples { get; init; } = [];
+}
 public sealed record SourceMetadata(
     string Type,
     string Title,
@@ -113,12 +117,11 @@ public sealed class ConversationMemory(
             nextGroup++;
         }
 
-        // Keep stable instructions/examples before changing per-user reference data.
+        // Reserve examples separately from real history and retrieval data.
         // Recent real exchanges were reserved first and cannot be displaced by samples.
         var exampleBudget = Math.Min(1400,
             budget - TokenEstimate.Count(messages.Concat(history).Append(userMessage)) - 30);
-        var demonstration = demonstrations.Build(Math.Max(0, exampleBudget), history.Append(userMessage).ToArray());
-        if (demonstration.Length > 0) TryAdd(new AiMessage("system", demonstration));
+        var exampleMessages = demonstrations.BuildMessages(Math.Max(0, exampleBudget));
 
         var priorAssistant = previous.LastOrDefault(x => x.Role == "assistant");
         var style = ChatStyleProfile.Prompt(user.ChatStyleProfile);
@@ -181,7 +184,7 @@ public sealed class ConversationMemory(
         while (nextGroup < groups.Count)
         {
             var candidate = groups[nextGroup].Concat(history).ToList();
-            if (TokenEstimate.Count(messages.Concat(candidate).Append(userMessage)) > budget) break;
+            if (TokenEstimate.Count(messages.Concat(exampleMessages).Concat(candidate).Append(userMessage)) > budget) break;
             history = candidate;
             nextGroup++;
         }
@@ -196,10 +199,10 @@ public sealed class ConversationMemory(
             messages.Count(m => m.Role == "system"), style.Length > 0,
             summary is not null && summary.Text.Length > 0, hasMood,
             messages[^1].Role == "user" && string.Equals(messages[^1].Content, current.Text, StringComparison.Ordinal));
-        return new(messages, hasMood);
+        return new(messages, hasMood) { Examples = exampleMessages };
 
         bool CanAdd(AiMessage message) =>
-            TokenEstimate.Count(messages.Append(message).Concat(history).Append(userMessage)) <= budget;
+            TokenEstimate.Count(messages.Append(message).Concat(exampleMessages).Concat(history).Append(userMessage)) <= budget;
 
         void TryAdd(AiMessage message)
         {

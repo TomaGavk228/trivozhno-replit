@@ -49,7 +49,10 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
                 Add("Книжкове джерело недоступне. Не вигадуй його зміст.");
             }
         }
-        var result = await ai.Complete(messages, summary: false, ct);
+        // Retrieval above only sees the real conversation. Demonstrations enter
+        // the API request here and are never saved as user messages or memories.
+        var request = GroqMessageLayout.WithExamples(messages, context.Examples);
+        var result = await ai.Complete(request, summary: false, ct);
         if (selection is not null)
             sources.AddRange(selection.Movies.Where(m => result.Text.Contains("{{movie:" + m.Id + "}}", StringComparison.Ordinal))
                 .Select(m => new SourceMetadata("movie", m.Title)));
@@ -59,7 +62,7 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         {
             var message = new AiMessage("system", text);
             var limit = Math.Min(options.InputBudget, Math.Min(options.TokensPerMinute, options.TokensPerDay) - options.TurnOutputBudget);
-            if (TokenEstimate.Count(messages.Append(message)) > limit) return false;
+            if (TokenEstimate.Count(messages.Append(message).Concat(context.Examples)) > limit) return false;
             messages.Insert(messages.FindLastIndex(m => m.Role == "user"), message);
             return true;
         }
