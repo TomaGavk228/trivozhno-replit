@@ -1,0 +1,41 @@
+name: Human Chat Tests
+
+on:
+  push:
+    branches: [human-chat-v3-research]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: trivozhno_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d trivozhno_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: Host=localhost;Port=5432;Database=trivozhno_test;Username=postgres;Password=postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore tests/Bot.Tests/Bot.Tests.csproj --locked-mode
+
+      - name: Test
+        run: bash scripts/test.sh --no-restore

@@ -33,6 +33,22 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("At")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("CachedTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CompletionTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("PromptTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ReasoningTokens")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("Summary")
                         .HasColumnType("boolean");
 
@@ -42,6 +58,8 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("At");
+
+                    b.HasIndex("Model", "At");
 
                     b.ToTable("ApiUsage");
                 });
@@ -57,6 +75,10 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
 
                     b.Property<bool>("Blocked")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("ChatStyleProfile")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");

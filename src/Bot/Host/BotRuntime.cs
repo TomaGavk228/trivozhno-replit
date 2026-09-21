@@ -86,7 +86,20 @@ public sealed class Maintenance(IServiceScopeFactory scopes, UserLocks locks, IC
         if (u is null) return;
         await db.Users.Where(x => x.Id == u.Id).ExecuteUpdateAsync(x => x.SetProperty(y => y.SummaryNextAt, clock.UtcNow.AddMinutes(2)), ct);
         try { await scope.ServiceProvider.GetRequiredService<IConversationMemory>().Summarize(u.Id, u.MemoryVersion, ct); }
-        catch (Exception e) when (!ct.IsCancellationRequested) { log.LogWarning("Summary postponed: {Category}", e.GetType().Name); }
+        catch (AiUnavailableException e) when (e.Reason is "authentication" or "permission_denied" or
+            "model_permission_blocked_org" or "model_permission_blocked_project")
+        {
+            // Permissions need an operator action; do not retry every two minutes.
+            await db.Users.Where(x => x.Id == u.Id).ExecuteUpdateAsync(x =>
+                x.SetProperty(y => y.SummaryNextAt, clock.UtcNow.AddMinutes(30)), ct);
+            log.LogWarning("Summary access denied; model {Model}; reason {Reason}; next attempt in 30 minutes",
+                options.SummaryModel, e.Reason);
+        }
+        catch (Exception e) when (!ct.IsCancellationRequested)
+        {
+            log.LogWarning("Summary postponed: {Category}; reason {Reason}", e.GetType().Name,
+                e is AiUnavailableException failure ? failure.Reason : "unexpected");
+        }
     }
 }
 

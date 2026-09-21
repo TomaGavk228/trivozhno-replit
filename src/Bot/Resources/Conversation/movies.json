@@ -1,0 +1,67 @@
+[
+  {
+    "id": "toy-story",
+    "title": "Історія іграшок",
+    "originalTitle": "Toy Story",
+    "year": 1995,
+    "genres": [
+      "пригоди",
+      "анімація",
+      "комедія",
+      "сімейний"
+    ],
+    "description": "Іграшкові суперники Вуді та Базз губляться й мусять діяти разом, щоб повернутися до свого господаря.",
+    "source": "https://movies.disney.com/toy-story"
+  },
+  {
+    "id": "monsters-inc",
+    "title": "Корпорація монстрів",
+    "originalTitle": "Monsters, Inc.",
+    "year": 2001,
+    "genres": [
+      "пригоди",
+      "анімація",
+      "комедія",
+      "сімейний"
+    ],
+    "description": "Монстри Саллі та Майк намагаються повернути додому дівчинку Бу, яка потрапила до їхнього світу.",
+    "source": "https://movies.disney.com/monsters-inc"
+  },
+  {
+    "id": "wall-e",
+    "title": "ВОЛЛ·І",
+    "originalTitle": "WALL-E",
+    "year": 2008,
+    "genres": [
+      "анімація",
+      "наукова фантастика"
+    ],
+    "description": "Самотній робот ВОЛЛ·І зустрічає дослідницького робота ЄВУ, і його звичне існування змінюється.",
+    "source": "https://movies.disney.com/wall-e"
+  },
+  {
+    "id": "up",
+    "title": "Вперед і вгору",
+    "originalTitle": "Up",
+    "year": 2009,
+    "genres": [
+      "пригоди",
+      "анімація"
+    ],
+    "description": "Карл вирушає в подорож у будинку на повітряних кулях і несподівано виявляє юного супутника Рассела.",
+    "source": "https://movies.disney.com/up"
+  },
+  {
+    "id": "inside-out",
+    "title": "Думками навиворіт",
+    "originalTitle": "Inside Out",
+    "year": 2015,
+    "genres": [
+      "пригоди",
+      "анімація",
+      "сімейний"
+    ],
+    "description": "Райлі пристосовується до переїзду, а її емоції намагаються впоратися зі змінами у звичному житті.",
+    "source": "https://movies.disney.com/inside-out"
+  }
+]

@@ -27,17 +27,36 @@ public sealed class TestClock : IClock
 public sealed class FakeAi : IAiClient
 {
     public ConcurrentQueue<IReadOnlyList<AiMessage>> Requests { get; } = new();
+    public ConcurrentQueue<AiTurnDraft> TurnDrafts { get; } = new();
     public TaskCompletionSource<bool> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource<AiResult>? Pause { get; set; }
     public bool Fail { get; set; }
+
     public async Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct)
     {
         Requests.Enqueue(messages.ToArray()); Entered.TrySetResult(true);
         if (Fail) throw new AiUnavailableException();
         if (Pause is not null) return await Pause.Task.WaitAsync(ct);
-        return new(summary ? "Користувач хоче уважного спілкування." : "Відповідь: " + messages.Last().Content, "fake-ai", 30);
+        return new(summary ? "Користувач хоче уважного спілкування." : "Відповідь: " + LastUser(messages), "fake-ai", 30);
     }
+
+    public async Task<AiTurnResult> CompleteTurn(IReadOnlyList<AiMessage> messages, CancellationToken ct)
+    {
+        Requests.Enqueue(messages.ToArray()); Entered.TrySetResult(true);
+        if (Fail) throw new AiUnavailableException();
+        if (Pause is not null)
+        {
+            var paused = await Pause.Task.WaitAsync(ct);
+            return new(new("тестовий стан", "", [], paused.Text), paused.Model, paused.Tokens);
+        }
+        if (TurnDrafts.TryDequeue(out var draft)) return new(draft, "fake-ai", 30);
+        return new(new("користувач веде звичайну розмову", "", [], "Відповідь: " + LastUser(messages)), "fake-ai", 30);
+    }
+
+    private static string LastUser(IReadOnlyList<AiMessage> messages)
+        => messages.Last(x => x.Role == "user").Content;
 }
+
 public sealed record SentMessage(long Destination, string Text, string? Markup, long Id);
 public sealed class FakeTelegram : ITelegramClient
 {
@@ -63,11 +82,13 @@ public sealed class TestRig : IAsyncDisposable
     public string Schema { get; } = "test_" + Guid.NewGuid().ToString("N");
     private string connection = "";
     private long update;
+    private bool fakeClock = true;
     public InboxProcessor Inbox => Services.GetRequiredService<InboxProcessor>();
     public AiProcessor Processor => Services.GetRequiredService<AiProcessor>();
     public OutboxProcessor Outbox => Services.GetRequiredService<OutboxProcessor>();
     public async Task Init(bool mood = true, bool realClock = false)
     {
+        fakeClock = !realClock;
         connection = ConnectionStrings.Parse(Environment.GetEnvironmentVariable("TEST_DATABASE_URL")!);
         await using (var conn = new NpgsqlConnection(connection))
         {
@@ -89,7 +110,14 @@ public sealed class TestRig : IAsyncDisposable
     { using var s = Services.CreateScope(); return await action(s.ServiceProvider.GetRequiredService<BotDb>()); }
     public Task<BotUser> User(long id = 1) => Read(db => db.Users.AsNoTracking().SingleAsync(x => x.TelegramId == id));
     public async Task Text(string text, long id = 1)
-    { var key = Interlocked.Increment(ref update); await Inbox.Store(new([new(key, id, text, null)], key + 1), default); await DrainInbox(); }
+    {
+        var key = Interlocked.Increment(ref update);
+        await Inbox.Store(new([new(key, id, text, null)], key + 1), default);
+        await DrainInbox();
+        // Production intentionally waits 1.5 s before claiming AI work so Telegram
+        // bursts can merge. Fake-clock tests must cross that window deterministically.
+        if (fakeClock) Clock.Advance(TimeSpan.FromSeconds(2));
+    }
     public async Task Click(string action, long id = 1, string? token = null)
     {
         token ??= (await User(id)).UiToken; var key = Interlocked.Increment(ref update);

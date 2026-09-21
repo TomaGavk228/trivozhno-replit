@@ -17,6 +17,7 @@ public sealed class BotUser
     public bool ReminderPromptShown { get; set; }
     public bool MoodContextEnabled { get; set; }
     public bool MoodConsentShown { get; set; }
+    public string ChatStyleProfile { get; set; } = "";
     public bool Blocked { get; set; }
     public int PendingFrequency { get; set; } = 1;
     public bool CustomTime { get; set; }
