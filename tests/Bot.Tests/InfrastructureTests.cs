@@ -42,7 +42,7 @@ public sealed class InfrastructureTests(ITestOutputHelper output)
     [PostgresFact]
     public async Task GroqRetriesDoNotLeavePhantomTokenReservations()
     {
-        await using var r = new TestRig(); await r.Init(realClock: true);
+        await using var r = new TestRig(); await r.Init();
         var handler = new StubHttp((index, _) =>
         {
             if (index == 1) { var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests); response.Headers.RetryAfter = new(TimeSpan.FromMilliseconds(1)); return response; }
@@ -104,24 +104,18 @@ public sealed class InfrastructureTests(ITestOutputHelper output)
     public async Task GroqFallbackUsesOwnProfileAnd401DoesNotRetry()
     {
         await using var r = new TestRig(); await r.Init();
-        var configured = new BotOptions
-        {
-            Model = "qwen/qwen3.8-27b",
-            FallbackModel = "openai/gpt-oss-120b",
-            GroqKey = "test-only"
-        };
         var handler = new StubHttp((index, _) => index == 1
             ? new(HttpStatusCode.NotFound) { Content = new StringContent("{\"error\":{\"code\":\"model_not_found\"}}") }
             : Success());
-        var client = new GroqClient(new HttpClient(handler), configured, r.Services.GetRequiredService<AiQuota>(), NullLogger<GroqClient>.Instance);
+        var client = new GroqClient(new HttpClient(handler), r.Services.GetRequiredService<BotOptions>(), r.Services.GetRequiredService<AiQuota>(), NullLogger<GroqClient>.Instance);
         var result = await client.Complete([new("user", "Привіт")], false, default);
-        Assert.Equal(configured.FallbackModel, result.Model); Assert.Equal(2, handler.Bodies.Count);
+        Assert.Equal(r.Services.GetRequiredService<BotOptions>().FallbackModel, result.Model); Assert.Equal(2, handler.Bodies.Count);
         var fallback = JsonDocument.Parse(handler.Bodies[1]).RootElement;
-        Assert.Equal("medium", fallback.GetProperty("reasoning_effort").GetString());
+        Assert.Equal("low", fallback.GetProperty("reasoning_effort").GetString());
         Assert.False(fallback.GetProperty("include_reasoning").GetBoolean());
         Assert.False(fallback.TryGetProperty("reasoning_format", out _));
         var denied = new StubHttp((_, _) => new(HttpStatusCode.Unauthorized));
-        var deniedClient = new GroqClient(new HttpClient(denied), configured, r.Services.GetRequiredService<AiQuota>(), NullLogger<GroqClient>.Instance);
+        var deniedClient = new GroqClient(new HttpClient(denied), r.Services.GetRequiredService<BotOptions>(), r.Services.GetRequiredService<AiQuota>(), NullLogger<GroqClient>.Instance);
         await Assert.ThrowsAsync<AiUnavailableException>(() => deniedClient.Complete([new("user", "Привіт")], false, default)); Assert.Single(denied.Bodies);
     }
     [PostgresFact]
@@ -219,7 +213,7 @@ public sealed class InfrastructureTests(ITestOutputHelper output)
             peakWorkingSetMb = process.PeakWorkingSet64 / 1048576d, processors = Environment.ProcessorCount, note = "Fake AI and Telegram. DB server RAM is separate. Completion measured from start of burst." }));
     }
     private static HttpResponseMessage Success() => new(HttpStatusCode.OK)
-    { Content = new StringContent("{\"choices\":[{\"message\":{\"content\":\"Привіт!\"},\"finish_reason\":\"stop\"}],\"usage\":{\"total_tokens\":10}}", Encoding.UTF8, "application/json") };
+    { Content = new StringContent("{\"choices\":[{\"message\":{\"content\":\"Привіт!\"}}],\"usage\":{\"total_tokens\":10}}", Encoding.UTF8, "application/json") };
     private sealed class StubHttp(Func<int, HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
         public List<string> Bodies { get; } = [];

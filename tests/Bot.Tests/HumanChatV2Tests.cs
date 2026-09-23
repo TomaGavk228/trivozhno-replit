@@ -14,7 +14,7 @@ public sealed class HumanChatV4Tests
             [new("user", "Привіт")]);
 
         Assert.Equal(0.7, payload["temperature"]);
-        Assert.Equal(1800, payload["max_completion_tokens"]);
+        Assert.Equal(360, payload["max_completion_tokens"]);
         Assert.Equal("none", payload["reasoning_effort"]);
         Assert.False(payload.ContainsKey("reasoning_format"));
 
@@ -38,7 +38,7 @@ public sealed class HumanChatV4Tests
         Assert.DoesNotContain("story_query", required);
 
         var delta = schema.GetProperty("properties").GetProperty("profile_delta");
-        var allowed = delta.GetProperty("items").GetProperty("properties").GetProperty("value").GetProperty("enum")
+        var allowed = delta.GetProperty("items").GetProperty("enum")
             .EnumerateArray()
             .Select(x => x.GetString())
             .ToArray();
@@ -103,7 +103,7 @@ public sealed class HumanChatV4Tests
             [new("user", "Привіт")],
             false);
 
-        Assert.Equal(500, payload["max_completion_tokens"]);
+        Assert.Equal(320, payload["max_completion_tokens"]);
         Assert.Equal(0.72, payload["temperature"]);
         Assert.Equal("none", payload["reasoning_effort"]);
     }

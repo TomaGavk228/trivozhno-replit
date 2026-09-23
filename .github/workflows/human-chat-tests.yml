@@ -4,7 +4,7 @@ on:
   push:
     branches: [human-chat-v3-research]
   pull_request:
-    branches: [main, human-chat-v4-dialogue]
+    branches: [main]
 
 jobs:
   test:
