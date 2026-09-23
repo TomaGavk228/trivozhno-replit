@@ -219,7 +219,7 @@ public sealed class InfrastructureTests(ITestOutputHelper output)
             peakWorkingSetMb = process.PeakWorkingSet64 / 1048576d, processors = Environment.ProcessorCount, note = "Fake AI and Telegram. DB server RAM is separate. Completion measured from start of burst." }));
     }
     private static HttpResponseMessage Success() => new(HttpStatusCode.OK)
-    { Content = new StringContent("{\"choices\":[{\"message\":{\"content\":\"Привіт!\"}}],\"usage\":{\"total_tokens\":10}}", Encoding.UTF8, "application/json") };
+    { Content = new StringContent("{\"choices\":[{\"message\":{\"content\":\"Привіт!\"},\"finish_reason\":\"stop\"}],\"usage\":{\"total_tokens\":10}}", Encoding.UTF8, "application/json") };
     private sealed class StubHttp(Func<int, HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
         public List<string> Bodies { get; } = [];
