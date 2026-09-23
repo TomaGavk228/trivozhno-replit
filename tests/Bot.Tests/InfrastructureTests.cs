@@ -42,7 +42,7 @@ public sealed class InfrastructureTests(ITestOutputHelper output)
     [PostgresFact]
     public async Task GroqRetriesDoNotLeavePhantomTokenReservations()
     {
-        await using var r = new TestRig(); await r.Init();
+        await using var r = new TestRig(); await r.Init(realClock: true);
         var handler = new StubHttp((index, _) =>
         {
             if (index == 1) { var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests); response.Headers.RetryAfter = new(TimeSpan.FromMilliseconds(1)); return response; }
@@ -104,18 +104,24 @@ public sealed class InfrastructureTests(ITestOutputHelper output)
     public async Task GroqFallbackUsesOwnProfileAnd401DoesNotRetry()
     {
         await using var r = new TestRig(); await r.Init();
+        var configured = new BotOptions
+        {
+            Model = "qwen/qwen3.8-27b",
+            FallbackModel = "openai/gpt-oss-120b",
+            GroqKey = "test-only"
+        };
         var handler = new StubHttp((index, _) => index == 1
             ? new(HttpStatusCode.NotFound) { Content = new StringContent("{\"error\":{\"code\":\"model_not_found\"}}") }
             : Success());
-        var client = new GroqClient(new HttpClient(handler), r.Services.GetRequiredService<BotOptions>(), r.Services.GetRequiredService<AiQuota>(), NullLogger<GroqClient>.Instance);
+        var client = new GroqClient(new HttpClient(handler), configured, r.Services.GetRequiredService<AiQuota>(), NullLogger<GroqClient>.Instance);
         var result = await client.Complete([new("user", "Привіт")], false, default);
-        Assert.Equal(r.Services.GetRequiredService<BotOptions>().FallbackModel, result.Model); Assert.Equal(2, handler.Bodies.Count);
+        Assert.Equal(configured.FallbackModel, result.Model); Assert.Equal(2, handler.Bodies.Count);
         var fallback = JsonDocument.Parse(handler.Bodies[1]).RootElement;
-        Assert.Equal("low", fallback.GetProperty("reasoning_effort").GetString());
+        Assert.Equal("medium", fallback.GetProperty("reasoning_effort").GetString());
         Assert.False(fallback.GetProperty("include_reasoning").GetBoolean());
         Assert.False(fallback.TryGetProperty("reasoning_format", out _));
         var denied = new StubHttp((_, _) => new(HttpStatusCode.Unauthorized));
-        var deniedClient = new GroqClient(new HttpClient(denied), r.Services.GetRequiredService<BotOptions>(), r.Services.GetRequiredService<AiQuota>(), NullLogger<GroqClient>.Instance);
+        var deniedClient = new GroqClient(new HttpClient(denied), configured, r.Services.GetRequiredService<AiQuota>(), NullLogger<GroqClient>.Instance);
         await Assert.ThrowsAsync<AiUnavailableException>(() => deniedClient.Complete([new("user", "Привіт")], false, default)); Assert.Single(denied.Bodies);
     }
     [PostgresFact]
