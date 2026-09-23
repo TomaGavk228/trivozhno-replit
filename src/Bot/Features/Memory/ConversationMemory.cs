@@ -119,9 +119,10 @@ public sealed class ConversationMemory(
 
         // Reserve examples separately from real history and retrieval data.
         // Recent real exchanges were reserved first and cannot be displaced by samples.
-        var exampleBudget = Math.Min(1400,
+        var exampleBudget = Math.Min(650,
             budget - TokenEstimate.Count(messages.Concat(history).Append(userMessage)) - 30);
-        var exampleMessages = demonstrations.BuildMessages(Math.Max(0, exampleBudget));
+        var exampleMessages = demonstrations.BuildMessages(Math.Max(0, exampleBudget),
+            history.Append(userMessage).ToArray());
 
         var priorAssistant = previous.LastOrDefault(x => x.Role == "assistant");
         var style = ChatStyleProfile.Prompt(user.ChatStyleProfile);
