@@ -9,7 +9,7 @@ namespace Trivozhno.Features.Conversation;
 
 public sealed record ExampleMessage(string Role, string Content);
 public sealed record DialogueExample(string Name, bool Enabled, ExampleMessage[] Messages,
-    bool Core = false, string[]? Tags = null, bool Always = false);
+    bool Core = false, string[]? Tags = null);
 
 public sealed class DialogueExamples
 {
@@ -41,28 +41,17 @@ public sealed class DialogueExamples
         var latest = conversation.LastOrDefault(m => m.Role == "user")?.Content ?? "";
         var recent = conversation.TakeLast(6).Where(m => m.Role == "user")
             .SkipLast(1).Select(m => m.Content).ToArray();
-        var matched = examples.Select((example, index) => (Example: example, Index: index,
+        return examples.Select((example, index) => (Example: example, Index: index,
                 Score: (example.Tags ?? []).Sum(tag =>
                     Matches(latest, tag) ? 10 : recent.Any(m => Matches(m, tag)) ? 1 : 0)))
-            .Where(x => x.Example.Enabled && !x.Example.Always && x.Score > 0)
+            .Where(x => x.Example.Enabled && x.Score > 0)
             .OrderByDescending(x => x.Score)
             .ThenByDescending(x => x.Example.Core)
             .ThenBy(x => x.Index)
-            .Take(2)
-            .Select(x => (x.Example, x.Index))
-            .ToArray();
-
-        // "Always" examples carry the bot's voice, so they are used even when no
-        // tag matches. Two are rotated by turn number to avoid repeating one pair.
-        var always = examples.Select((example, index) => (Example: example, Index: index))
-            .Where(x => x.Example.Enabled && x.Example.Always)
-            .ToArray();
-        var turns = conversation.Count(m => m.Role == "user");
-        var voice = Enumerable.Range(0, Math.Min(2, always.Length))
-            .Select(i => always[(turns + i) % always.Length]);
-
-        // Voice first; the situational example sits closest to the real chat.
-        return voice.Concat(matched);
+            // Demonstrations are for edge cases, not a permanent voice primer.
+            // One relevant example is enough; ordinary turns get zero.
+            .Take(1)
+            .Select(x => (x.Example, x.Index));
     }
 
     private static bool Matches(string message, string tag) =>
