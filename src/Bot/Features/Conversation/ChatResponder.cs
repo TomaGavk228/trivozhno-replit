@@ -30,6 +30,12 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         }
 
         var current = messages.Last(m => m.Role == "user").Content;
+
+        // A tiny deterministic turn policy is more reliable than piling style rules
+        // into the global prompt. It does not infer diagnoses or emotional states.
+        var turnGuidance = TurnGuidance(current);
+        if (turnGuidance.Length > 0) Add(turnGuidance);
+
         // Books remain available on explicit request, never triggered by sadness/anxiety.
         if (current.Contains("книг", StringComparison.OrdinalIgnoreCase) &&
             new[] { "поясни", "що пиш", "що каж", "знайди", "з книги" }.Any(s => current.Contains(s, StringComparison.OrdinalIgnoreCase)))
@@ -66,5 +72,22 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
             messages.Insert(messages.FindLastIndex(m => m.Role == "user"), message);
             return true;
         }
+    }
+
+    internal static string TurnGuidance(string current)
+    {
+        var text = current.Trim().ToLowerInvariant();
+
+        if (text is "привіт" or "привіт)" or "привіт!" or "хай" or "хай)" or "хей" or "хей)")
+            return "Поточний хід: звичайне привітання. Відповідай одним коротким привітанням. Без «ех/блін», без радості від самого факту повідомлення, без припущення що день важкий і без автоматичного питання.";
+
+        if (text.Contains("що мені робити") || text.Contains("шо мені робити") ||
+            text.Contains("що робити?") || text.Contains("шо робити?"))
+            return "Поточний хід: людина прямо просить пораду. Дай рівно одну реалістичну ідею, пов'язану з уже сказаним. Не роби список, не додавай дихання/воду/прогулянку пакетом і не переводь автоматично до терапії.";
+
+        if (text is "не хочу нічого робити" or "нічого не хочу робити" or "не хочу нічого")
+            return "Поточний хід: людина відмовляється щось робити. Не давай нової поради, вправи або завдання і не став питання. Відповідай коротко, без «я тут», «тримайся» та інших завершальних кліше.";
+
+        return "";
     }
 }
