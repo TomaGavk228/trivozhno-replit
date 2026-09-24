@@ -6,7 +6,7 @@ namespace Trivozhno.Infrastructure.Groq;
 // for detail changes the output allowance; this never classifies emotion.
 public static class ChatReplyBudget
 {
-    public const int BriefTokens = 500;
+    public const int BriefTokens = 240;
 
     public static bool WantsDetail(IReadOnlyList<AiMessage> messages)
     {
