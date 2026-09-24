@@ -104,7 +104,7 @@ public sealed class HumanChatV4Tests
             [new("user", "Привіт")],
             false);
 
-        Assert.Equal(320, payload["max_completion_tokens"]);
+        Assert.Equal(240, payload["max_completion_tokens"]);
         Assert.Equal(0.72, payload["temperature"]);
         Assert.Equal("none", payload["reasoning_effort"]);
     }
@@ -113,26 +113,38 @@ public sealed class HumanChatV4Tests
     public void GreetingTurnGuidanceStaysPlain()
     {
         var guidance = ChatResponder.TurnGuidance("Привіт");
-        Assert.Contains("одним коротким привітанням", guidance);
-        Assert.Contains("без автоматичного питання", guidance);
+        Assert.Contains("привітання", guidance);
+        Assert.Contains("коротке природне привітання", guidance);
     }
 
     [Fact]
     public void AdviceTurnGuidanceAllowsOnlyOneConcreteIdea()
     {
         var guidance = ChatResponder.TurnGuidance("Що мені робити?");
-        Assert.Contains("рівно одну реалістичну ідею", guidance);
-        Assert.Contains("Не роби список", guidance);
-        Assert.Contains("не переводь автоматично до терапії", guidance);
+        Assert.Contains("прямий запит поради", guidance);
+        Assert.Contains("одну конкретну реалістичну річ", guidance);
     }
 
     [Fact]
     public void RefusalTurnGuidanceDoesNotPushAnotherTask()
     {
         var guidance = ChatResponder.TurnGuidance("Не хочу нічого робити");
-        Assert.Contains("Не давай нової поради", guidance);
-        Assert.Contains("не став питання", guidance);
-        Assert.Contains("без «я тут», «тримайся»", guidance);
+        Assert.Contains("відмова від активностей", guidance);
+        Assert.Contains("прийми цю межу", guidance);
+        Assert.Contains("без нового завдання", guidance);
+    }
+
+
+    [Fact]
+    public void AdviceAfterRefusalRespectsTheBoundary()
+    {
+        var guidance = ChatResponder.TurnGuidance(
+            "Що мені робити?",
+            ["Та нема сил", "Не хочу нічого робити", "Що мені робити?"]);
+
+        Assert.Contains("запит поради після відмови", guidance);
+        Assert.Contains("поважає цю межу", guidance);
+        Assert.Contains("зменшити тиск на себе", guidance);
     }
 
 }
