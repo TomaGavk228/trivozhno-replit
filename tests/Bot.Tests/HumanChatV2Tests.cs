@@ -147,4 +147,64 @@ public sealed class HumanChatV4Tests
         Assert.Contains("зменшити тиск на себе", guidance);
     }
 
+
+    [Theory]
+    [InlineData("Як мені позбутися тривоги")]
+    [InlineData("Як позбутися тривоги")]
+    [InlineData("Що мені робити?")]
+    public void AdvicePhrasesAreClassifiedAsAdvice(string text)
+    {
+        Assert.Equal(DialogueAct.Advice, ChatResponder.ClassifyDialogueAct(text));
+    }
+
+    [Theory]
+    [InlineData("Не хочу")]
+    [InlineData("Не хочу нічого робити")]
+    public void RefusalGuidanceKeepsConversationAlive(string text)
+    {
+        var guidance = ChatResponder.TurnGuidance(text);
+        Assert.Contains("ПРОДОВЖИТИ РОЗМОВУ САМОМУ", guidance);
+        Assert.Contains("не від розмови", guidance);
+    }
+
+    [Theory]
+    [InlineData("Угу")]
+    [InlineData("Погано")]
+    [InlineData("Не знаю")]
+    public void ShortReplyGuidanceMakesBotCarrySomeConversation(string text)
+    {
+        var guidance = ChatResponder.TurnGuidance(text);
+        Assert.Contains("ПІДХОПИТИ РОЗМОВУ САМОМУ", guidance);
+        Assert.Contains("новий", guidance, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void GateRejectsDeadEndAfterRefusal()
+    {
+        var quality = ReplyQualityGate.Check(DialogueAct.Refusal, "Не хочу", "Добре.");
+        Assert.False(quality.Accept);
+    }
+
+    [Fact]
+    public void GateRejectsPhysiologyClaim()
+    {
+        var quality = ReplyQualityGate.Check(
+            DialogueAct.Advice,
+            "Як мені позбутися тривоги",
+            "Це фізично сповільнює серцебиття і дає мозку сигнал.");
+        Assert.False(quality.Accept);
+    }
+
+    [Fact]
+    public void SafeFallbackAfterRefusalIsNotADeadEnd()
+    {
+        var reply = ReplyQualityGate.SafeFallback(
+            DialogueAct.Refusal,
+            "Не хочу",
+            ["У мене нема сил", "Не хочу"]);
+
+        Assert.True(reply.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length > 4);
+        Assert.DoesNotContain("?", reply);
+    }
+
 }
