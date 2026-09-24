@@ -119,10 +119,10 @@ public sealed class ConversationMemory(
 
         // Reserve examples separately from real history and retrieval data.
         // Recent real exchanges were reserved first and cannot be displaced by samples.
-        var exampleBudget = Math.Min(420,
-            budget - TokenEstimate.Count(messages.Concat(history).Append(userMessage)) - 30);
-        var exampleMessages = demonstrations.BuildMessages(Math.Max(0, exampleBudget),
-            history.Append(userMessage).ToArray());
+        // Disable few-shot demonstrations for the clean live-chat baseline.
+        // Tag matching is too coarse for ordinary words such as "день", "думки" and
+        // "не хочу", which was injecting unrelated examples and steering the reply.
+        IReadOnlyList<AiMessage> exampleMessages = [];
 
         var priorAssistant = previous.LastOrDefault(x => x.Role == "assistant");
         var style = ChatStyleProfile.Prompt(user.ChatStyleProfile);
