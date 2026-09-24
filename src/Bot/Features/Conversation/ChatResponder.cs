@@ -84,9 +84,14 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
             var retry = await ai.Complete(retryRequest, summary: false, ct);
             var retryQuality = ReplyQualityGate.Check(act, current, retry.Text);
             if (retryQuality.Accept)
+            {
                 result = retry;
+            }
             else
+            {
                 log.LogWarning("Reply quality retry still failed; act {Act}; reason {Reason}", act, retryQuality.Feedback);
+                result = retry with { Text = ReplyQualityGate.SafeFallback(act, current, recentUser) };
+            }
         }
 
         if (selection is not null)
@@ -122,7 +127,7 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
             return DialogueAct.Goodbye;
 
         if (Regex.IsMatch(lower,
-                @"^(що|шо) (мені )?робити\b|^порадь\b|^підкажи\b|^як позбутися\b|^як (мені )?(впоратися|впоратись|заспокоїтися|заспокоїтись|перестати)\b",
+                @"^(що|шо) (мені )?робити\b|^порадь\b|^підкажи\b|^як (мені )?позбутися\b|^як (мені )?(впоратися|впоратись|заспокоїтися|заспокоїтись|перестати)\b",
                 RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)))
             return DialogueAct.Advice;
 
@@ -166,10 +171,14 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
                 "ДІЯ ВІДПОВІДІ: ПОПРОЩАТИСЯ. Відповідай одним коротким природним прощанням.",
 
             DialogueAct.Refusal =>
-                "ДІЯ ВІДПОВІДІ: ПРИЙНЯТИ МЕЖУ. Одним коротким твердженням прийми відмову й зупини ініціативу бота. Репліка не повинна вимагати відповіді.",
+                "ДІЯ ВІДПОВІДІ: ПРИЙНЯТИ МЕЖУ Й ПРОДОВЖИТИ РОЗМОВУ САМОМУ. Людина відмовилась від дії, а не від розмови. " +
+                "Коротко прийми це, а потім додай одну маленьку думку або спостереження з поточної теми, яке можна підхопити або просто прочитати. " +
+                "Не залишай відповідь на рівні «добре/зрозуміло».",
 
             DialogueAct.ShortReply =>
-                "ДІЯ ВІДПОВІДІ: ЗАЛИШИТИСЯ В ЦІЙ ТЕМІ. Відгукнися на коротку відповідь через попередній контекст. Дай одне коротке твердження, яке не вимагає від людини пояснення чи дії.",
+                "ДІЯ ВІДПОВІДІ: ПІДХОПИТИ РОЗМОВУ САМОМУ. Коротка відповідь означає, що людині може бути важко тягнути діалог. " +
+                "Не просто підтвердь її. Додай один новий, але близький до теми шматок розмови: конкретне спостереження, невеликий контраст або думку, що випливає з попередніх реплік. " +
+                "Відповідь має бути легко підхопити, але вона не повинна вимагати відповіді.",
 
             DialogueAct.Advice when recentRefusal =>
                 "ДІЯ ВІДПОВІДІ: ДАТИ ПОРАДУ ПІСЛЯ ВІДМОВИ ВІД АКТИВНОСТЕЙ. " +
