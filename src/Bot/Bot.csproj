@@ -14,8 +14,8 @@
     <PackageReference Include="PdfPig" Version="0.1.11" />
   </ItemGroup>
   <ItemGroup>
-    <Content Update="Resources/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="Resources/**/*.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="Resources/**/*.jsonl" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Update="Resources/**/*" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+    <Content Include="Resources/**/*.txt" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+    <Content Include="Resources/**/*.jsonl" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
   </ItemGroup>
 </Project>
