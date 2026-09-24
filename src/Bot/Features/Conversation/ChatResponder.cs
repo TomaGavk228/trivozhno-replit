@@ -33,7 +33,9 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
 
         // A tiny deterministic turn policy is more reliable than piling style rules
         // into the global prompt. It does not infer diagnoses or emotional states.
-        var turnGuidance = TurnGuidance(current);
+        var recentUser = messages.Where(m => m.Role == "user")
+            .TakeLast(4).Select(m => m.Content).ToArray();
+        var turnGuidance = TurnGuidance(current, recentUser);
         if (turnGuidance.Length > 0) Add(turnGuidance);
 
         // Books remain available on explicit request, never triggered by sadness/anxiety.
@@ -74,20 +76,27 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         }
     }
 
-    public static string TurnGuidance(string current)
+    public static string TurnGuidance(string current, IReadOnlyList<string>? recentUser = null)
     {
         var text = current.Trim().ToLowerInvariant();
+        recentUser ??= [];
+        var recent = string.Join("\n", recentUser).ToLowerInvariant();
 
         if (text is "привіт" or "привіт)" or "привіт!" or "хай" or "хай)" or "хей" or "хей)")
-            return "Поточний хід: звичайне привітання. Відповідай одним коротким привітанням. Без «ех/блін», без радості від самого факту повідомлення, без припущення що день важкий і без автоматичного питання.";
+            return "Поточний хід — привітання. Дай одне коротке природне привітання у тому ж тоні.";
 
         if (text.Contains("що мені робити") || text.Contains("шо мені робити") ||
             text.Contains("що робити?") || text.Contains("шо робити?"))
-            return "Поточний хід: людина прямо просить пораду. Дай рівно одну реалістичну ідею, пов'язану з уже сказаним. Не роби список, не додавай дихання/воду/прогулянку пакетом і не переводь автоматично до терапії.";
+        {
+            if (recent.Contains("не хочу нічого робити") || recent.Contains("нічого не хочу робити") ||
+                recent.Contains("не хочу нічого"))
+                return "Поточний хід — запит поради після відмови від активностей. Запропонуй одну пораду, яка поважає цю межу: не вимагати від себе зараз виправляти стан і зменшити тиск на себе. Сформулюй це просто, як у переписці.";
+
+            return "Поточний хід — прямий запит поради. Запропонуй одну конкретну реалістичну річ, яка випливає з контексту цієї розмови.";
+        }
 
         if (text is "не хочу нічого робити" or "нічого не хочу робити" or "не хочу нічого")
-            return "Поточний хід: людина відмовляється щось робити. Не давай нової поради, вправи або завдання і не став питання. Відповідай коротко, без «я тут», «тримайся» та інших завершальних кліше.";
+            return "Поточний хід — відмова від активностей. Коротко прийми цю межу і продовж розмову без нового завдання.";
 
-        return "";
-    }
-}
+        return "Поточний хід — звичайне продовження розмови. Візьми одну конкретну деталь з останньої репліки, відгукнися на неї і додай максимум одну природну думку по цій самій темі.";
+    }}
