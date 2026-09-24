@@ -74,7 +74,7 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         }
     }
 
-    internal static string TurnGuidance(string current)
+    public static string TurnGuidance(string current)
     {
         var text = current.Trim().ToLowerInvariant();
 
