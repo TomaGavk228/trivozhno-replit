@@ -1,3 +1,4 @@
+using Trivozhno.Features.Conversation;
 using System.Text.Json;
 using Trivozhno.Features.Memory;
 using Trivozhno.Infrastructure.Groq;
@@ -107,4 +108,31 @@ public sealed class HumanChatV4Tests
         Assert.Equal(0.72, payload["temperature"]);
         Assert.Equal("none", payload["reasoning_effort"]);
     }
+
+    [Fact]
+    public void GreetingTurnGuidanceStaysPlain()
+    {
+        var guidance = ChatResponder.TurnGuidance("Привіт");
+        Assert.Contains("одним коротким привітанням", guidance);
+        Assert.Contains("без автоматичного питання", guidance);
+    }
+
+    [Fact]
+    public void AdviceTurnGuidanceAllowsOnlyOneConcreteIdea()
+    {
+        var guidance = ChatResponder.TurnGuidance("Що мені робити?");
+        Assert.Contains("рівно одну реалістичну ідею", guidance);
+        Assert.Contains("Не роби список", guidance);
+        Assert.Contains("не переводь автоматично до терапії", guidance);
+    }
+
+    [Fact]
+    public void RefusalTurnGuidanceDoesNotPushAnotherTask()
+    {
+        var guidance = ChatResponder.TurnGuidance("Не хочу нічого робити");
+        Assert.Contains("Не давай нової поради", guidance);
+        Assert.Contains("не став питання", guidance);
+        Assert.Contains("без «я тут», «тримайся»", guidance);
+    }
+
 }
