@@ -26,6 +26,11 @@ public static class ReplyQualityGate
         RegexOptions.CultureInvariant,
         TimeSpan.FromMilliseconds(100));
 
+    private static readonly Regex DeadEnd = new(
+        @"(?i)^(добре|ок|окей|понятно|зрозуміло|угу|ага|ясно)[.! )]*$",
+        RegexOptions.CultureInvariant,
+        TimeSpan.FromMilliseconds(100));
+
     private static readonly Regex DistressShare = new(
         @"(?i)\b(треш|погано|фігово|сил\s+нема|нема\s+сил|тривож\w*|куп[аи]\s+думок|втом\w*|виснаж\w*)\b",
         RegexOptions.CultureInvariant,
@@ -54,7 +59,9 @@ public static class ReplyQualityGate
         if (act is DialogueAct.Refusal or DialogueAct.ShortReply)
         {
             if (text.Contains('?') || PushyImperative.IsMatch(text))
-                return Fail("Дай коротке твердження, яке приймає сказане й не просить людину щось пояснювати або робити.");
+                return Fail("Продовж розмову коротким твердженням без нового завдання або обов'язкового питання.");
+            if (DeadEnd.IsMatch(text) || WordCount(text) < 4)
+                return Fail("Не обривай діалог сухим підтвердженням. Додай одну маленьку думку з поточної теми, щоб бот теж ніс розмову.");
         }
 
         if (act == DialogueAct.Sharing && DistressShare.IsMatch(current))
@@ -75,6 +82,35 @@ public static class ReplyQualityGate
         "Попередня чернетка не підходить для цього ходу. " + result.Feedback +
         "\nСформулюй іншу репліку з нуля. Не пояснюй виправлення.\nЧернетка, яку НЕ треба повторювати: " +
         draft.Trim();
+
+    public static string SafeFallback(
+        DialogueAct act,
+        string current,
+        IReadOnlyList<string>? recentUser = null)
+    {
+        recentUser ??= [];
+        var previous = recentUser
+            .Where(x => !string.Equals(x, current, StringComparison.Ordinal))
+            .TakeLast(4)
+            .ToArray();
+
+        return act switch
+        {
+            DialogueAct.Greeting => "Привіт)",
+            DialogueAct.Refusal => "Окей, тоді без цього. І сам факт, що зараз навіть на прості речі нема бажання, уже багато каже про те, наскільки ти вимотався.",
+            DialogueAct.ShortReply when current.Trim().Equals("погано", StringComparison.OrdinalIgnoreCase) =>
+                "Мда, тоді зараз точно не до великих рішень. Схоже, день просто дотиснув тебе.",
+            DialogueAct.ShortReply =>
+                "Та, тут і без пояснень зрозуміло, що сил небагато. Можемо просто триматися цієї теми без задач для тебе.",
+            DialogueAct.Advice =>
+                "Не намагайся вирішити все одразу. З того, що ти вже написав, зараз важливіше зменшити тиск на себе, а до конкретних кроків повернутися, коли буде трохи більше сил.",
+            DialogueAct.Question =>
+                "Коротко: тут немає однієї кнопки, яка все вимкне. Краще дивитися на те, що саме підсилює цей стан у тебе, і розбирати по одному шматку.",
+            DialogueAct.Goodbye => "Добраніч)",
+            _ =>
+                "Це реально схоже на день, який просто висмоктав сили. І TikTok тут більше виглядає як спосіб нічого вже не тягнути, ніж як відпочинок."
+        };
+    }
 
     private static int WordCount(string text) =>
         text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
