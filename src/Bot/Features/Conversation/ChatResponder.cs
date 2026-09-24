@@ -73,6 +73,22 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         var request = GroqMessageLayout.WithExamples(messages, context.Examples);
         var result = await ai.Complete(request, summary: false, ct);
 
+        var quality = ReplyQualityGate.Check(act, current, result.Text);
+        if (!quality.Accept)
+        {
+            log.LogInformation("Reply quality gate rejected draft; act {Act}; reason {Reason}", act, quality.Feedback);
+            var retryMessages = messages.ToList();
+            retryMessages.Insert(retryMessages.FindLastIndex(m => m.Role == "user"),
+                new AiMessage("system", ReplyQualityGate.RetryInstruction(quality, result.Text)));
+            var retryRequest = GroqMessageLayout.WithExamples(retryMessages, context.Examples);
+            var retry = await ai.Complete(retryRequest, summary: false, ct);
+            var retryQuality = ReplyQualityGate.Check(act, current, retry.Text);
+            if (retryQuality.Accept)
+                result = retry;
+            else
+                log.LogWarning("Reply quality retry still failed; act {Act}; reason {Reason}", act, retryQuality.Feedback);
+        }
+
         if (selection is not null)
             sources.AddRange(selection.Movies
                 .Where(m => result.Text.Contains("{{movie:" + m.Id + "}}", StringComparison.Ordinal))
