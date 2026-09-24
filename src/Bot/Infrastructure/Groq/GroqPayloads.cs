@@ -121,7 +121,7 @@ public sealed partial class GroqClient
         {
             // Live conversation must follow the user's meaning and previous refusals.
             // Keep summary/legacy costs unchanged; evaluate this setting by manual chat.
-            body["reasoning_effort"] = summary || structuredTurn ? "low" : "medium";
+            body["reasoning_effort"] = "low";
             body["include_reasoning"] = false;
         }
         else if (model.StartsWith("qwen/", StringComparison.Ordinal))
