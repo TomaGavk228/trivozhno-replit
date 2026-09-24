@@ -23,9 +23,12 @@ public sealed partial class GroqClient(
         // Payload builders also normalize for direct callers; Prepare is idempotent.
         var originalInstructionBlocks = messages.Count(m => m.Role is "system" or "developer");
         messages = GroqMessageLayout.Prepare(messages);
-        log.LogInformation("Groq layout; instruction blocks {Before} -> {After}; instruction chars {Chars}; last role {LastRole}",
+        var systemContent = messages.FirstOrDefault(m => m.Role == "system")?.Content ?? "";
+        var systemSha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(systemContent)))[..12];
+        log.LogInformation("Groq layout; instruction blocks {Before} -> {After}; instruction chars {Chars}; system SHA {SystemSha}; last role {LastRole}",
             originalInstructionBlocks, messages.Count(m => m.Role == "system"),
-            messages.FirstOrDefault(m => m.Role == "system")?.Content.Length ?? 0,
+            systemContent.Length, systemSha,
             messages.LastOrDefault()?.Role ?? "none");
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
         budget.CancelAfter(TimeSpan.FromSeconds(options.JobBudget));
