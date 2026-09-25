@@ -140,7 +140,14 @@ public static class ReplyQualityGate
         var contextTerms = Terms(context);
         if (contextTerms.Count == 0) return true;
         var replyTerms = Terms(reply);
-        return replyTerms.Overlaps(contextTerms);
+        return replyTerms.Any(r => contextTerms.Any(c => SameStem(r, c)));
+    }
+
+    private static bool SameStem(string a, string b)
+    {
+        if (string.Equals(a, b, StringComparison.OrdinalIgnoreCase)) return true;
+        if (a.Length < 5 || b.Length < 5) return false;
+        return string.Equals(a[..5], b[..5], StringComparison.OrdinalIgnoreCase);
     }
 
     private static HashSet<string> Terms(string text)
