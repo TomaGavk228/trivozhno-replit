@@ -73,24 +73,42 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         var request = GroqMessageLayout.WithExamples(messages, context.Examples);
         var result = await ai.Complete(request, summary: false, ct);
 
-        var quality = ReplyQualityGate.Check(act, current, result.Text);
+        var quality = ReplyQualityGate.Check(act, current, result.Text, recentUser);
         if (!quality.Accept)
         {
             log.LogInformation("Reply quality gate rejected draft; act {Act}; reason {Reason}", act, quality.Feedback);
-            var retryMessages = messages.ToList();
-            retryMessages.Insert(retryMessages.FindLastIndex(m => m.Role == "user"),
-                new AiMessage("system", ReplyQualityGate.RetryInstruction(quality, result.Text)));
-            var retryRequest = GroqMessageLayout.WithExamples(retryMessages, context.Examples);
-            var retry = await ai.Complete(retryRequest, summary: false, ct);
-            var retryQuality = ReplyQualityGate.Check(act, current, retry.Text);
-            if (retryQuality.Accept)
+
+            var qwenRepairMessages = BuildRepairMessages(quality, result.Text);
+            AiResult? qwenRepair = null;
+            try
             {
-                result = retry;
+                qwenRepair = await ai.CompleteWithModel(
+                    GroqMessageLayout.WithExamples(qwenRepairMessages, context.Examples),
+                    options.Model,
+                    0.30,
+                    ct);
+            }
+            catch (AiUnavailableException e)
+            {
+                log.LogWarning("Qwen repair unavailable; reason {Reason}", e.Reason);
+            }
+
+            if (qwenRepair is not null)
+            {
+                var qwenQuality = ReplyQualityGate.Check(act, current, qwenRepair.Text, recentUser);
+                if (qwenQuality.Accept)
+                {
+                    result = qwenRepair;
+                }
+                else
+                {
+                    log.LogInformation("Qwen repair rejected; act {Act}; reason {Reason}", act, qwenQuality.Feedback);
+                    result = await TryFallbackRepair(qwenQuality, qwenRepair.Text, result);
+                }
             }
             else
             {
-                log.LogWarning("Reply quality retry still failed; act {Act}; reason {Reason}", act, retryQuality.Feedback);
-                result = retry with { Text = ReplyQualityGate.SafeFallback(act, current, recentUser) };
+                result = await TryFallbackRepair(quality, result.Text, result);
             }
         }
 
@@ -100,6 +118,61 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
                 .Select(m => new SourceMetadata("movie", m.Title)));
 
         return new(result with { Text = selection?.Render(result.Text) ?? result.Text }, sources);
+
+        List<AiMessage> BuildRepairMessages(ReplyQualityResult failed, string draft)
+        {
+            var repairMessages = messages.ToList();
+            repairMessages.Insert(
+                repairMessages.FindLastIndex(m => m.Role == "user"),
+                new AiMessage(
+                    "system",
+                    ReplyQualityGate.RetryInstruction(
+                        failed,
+                        draft,
+                        act,
+                        current,
+                        recentUser)));
+            return repairMessages;
+        }
+
+        async Task<AiResult> TryFallbackRepair(
+            ReplyQualityResult failed,
+            string draft,
+            AiResult baseResult)
+        {
+            try
+            {
+                var repairMessages = BuildRepairMessages(failed, draft);
+                var fallbackRepair = await ai.CompleteWithModel(
+                    GroqMessageLayout.WithExamples(repairMessages, context.Examples),
+                    options.FallbackModel,
+                    0.25,
+                    ct);
+
+                var fallbackQuality = ReplyQualityGate.Check(
+                    act,
+                    current,
+                    fallbackRepair.Text,
+                    recentUser);
+
+                if (fallbackQuality.Accept)
+                    return fallbackRepair;
+
+                log.LogWarning(
+                    "Fallback-model repair rejected; act {Act}; reason {Reason}",
+                    act,
+                    fallbackQuality.Feedback);
+            }
+            catch (AiUnavailableException e)
+            {
+                log.LogWarning("Fallback-model repair unavailable; reason {Reason}", e.Reason);
+            }
+
+            return baseResult with
+            {
+                Text = ReplyQualityGate.EmergencyFallback(act)
+            };
+        }
 
         bool Add(string text)
         {
