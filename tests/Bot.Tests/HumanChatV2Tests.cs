@@ -184,13 +184,17 @@ public sealed class HumanChatV4Tests
     }
 
     [Fact]
-    public void GateRejectsPhysiologyClaim()
+    public void GateNoLongerPolicesWordChoiceInOtherwiseNormalReplies()
     {
+        // The gate used to reject replies for containing specific words/roots
+        // (physiology claims, "canned advice" stems, imperative verbs, cliche
+        // phrases) regardless of whether the reply actually read naturally.
+        // That policing is gone: style is the prompt's job, not a regex's.
         var quality = ReplyQualityGate.Check(
             DialogueAct.Advice,
             "Як мені позбутися тривоги",
-            "Це фізично сповільнює серцебиття і дає мозку сигнал.");
-        Assert.False(quality.Accept);
+            "Спробуй просто подихати трохи повільніше, це реально заспокоює.");
+        Assert.True(quality.Accept);
     }
 
     [Fact]
@@ -204,16 +208,19 @@ public sealed class HumanChatV4Tests
     }
 
     [Fact]
-    public void GateRequiresContextAnchorForShortReplies()
+    public void GateNoLongerRequiresStemmedContextAnchor()
     {
+        // The old 5-letter stem-matching "context anchor" check rejected replies
+        // that didn't literally re-share a word root with recent messages -- too
+        // fragile for real conversation. The gate now only blocks bare dead-end
+        // acknowledgments after a refusal/short reply, not topic drift.
         var quality = ReplyQualityGate.Check(
             DialogueAct.ShortReply,
             "Угу",
             "До речі, завтра буде цікава погода.",
             ["У мене нема сил", "Угу"]);
 
-        Assert.False(quality.Accept);
-        Assert.Contains("прив'яжи", quality.Feedback, StringComparison.OrdinalIgnoreCase);
+        Assert.True(quality.Accept);
     }
 
 }
