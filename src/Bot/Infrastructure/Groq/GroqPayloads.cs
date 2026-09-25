@@ -155,6 +155,29 @@ public sealed partial class GroqClient
         { throw new AiUnavailableException("job_budget_exhausted"); }
     }
 
+    public async Task<AiResult> CompleteWithModel(
+        IReadOnlyList<AiMessage> messages,
+        string model,
+        double temperature,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await CompleteRaw(
+                messages,
+                summary: false,
+                structuredTurn: false,
+                ct,
+                forcedModel: model,
+                forcedTemperature: temperature,
+                exactModel: true);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new AiUnavailableException("job_budget_exhausted");
+        }
+    }
+
     public async Task<AiTurnResult> CompleteTurn(
         IReadOnlyList<AiMessage> messages,
         CancellationToken ct)
