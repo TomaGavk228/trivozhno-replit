@@ -113,7 +113,7 @@ public sealed class HumanChatV4Tests
     public void GreetingTurnGuidanceStaysPlain()
     {
         var guidance = ChatResponder.TurnGuidance("Привіт");
-        Assert.Contains("привітання", guidance);
+        Assert.Contains("ПРИВІТАТИСЯ", guidance);
         Assert.Contains("коротке природне привітання", guidance);
     }
 
@@ -121,17 +121,16 @@ public sealed class HumanChatV4Tests
     public void AdviceTurnGuidanceAllowsOnlyOneConcreteIdea()
     {
         var guidance = ChatResponder.TurnGuidance("Що мені робити?");
-        Assert.Contains("прямий запит поради", guidance);
-        Assert.Contains("одну конкретну реалістичну річ", guidance);
+        Assert.Contains("ДАТИ ОДНУ ПОРАДУ", guidance);
+        Assert.Contains("одну конкретну ідею", guidance);
     }
 
     [Fact]
     public void RefusalTurnGuidanceDoesNotPushAnotherTask()
     {
         var guidance = ChatResponder.TurnGuidance("Не хочу нічого робити");
-        Assert.Contains("відмова від активностей", guidance);
-        Assert.Contains("прийми цю межу", guidance);
-        Assert.Contains("без нового завдання", guidance);
+        Assert.Contains("ПРИЙНЯТИ МЕЖУ", guidance);
+        Assert.Contains("продовжити розмову самому", guidance, StringComparison.OrdinalIgnoreCase);
     }
 
 
@@ -142,9 +141,8 @@ public sealed class HumanChatV4Tests
             "Що мені робити?",
             ["Та нема сил", "Не хочу нічого робити", "Що мені робити?"]);
 
-        Assert.Contains("запит поради після відмови", guidance);
-        Assert.Contains("поважає цю межу", guidance);
-        Assert.Contains("зменшити тиск на себе", guidance);
+        Assert.Contains("ПОРАДУ ПІСЛЯ ВІДМОВИ", guidance);
+        Assert.Contains("відкласти рішення", guidance);
     }
 
 
@@ -196,15 +194,26 @@ public sealed class HumanChatV4Tests
     }
 
     [Fact]
-    public void SafeFallbackAfterRefusalIsNotADeadEnd()
+    public void EmergencyFallbackNeverInventsConversationFacts()
     {
-        var reply = ReplyQualityGate.SafeFallback(
-            DialogueAct.Refusal,
-            "Не хочу",
-            ["У мене нема сил", "Не хочу"]);
+        var reply = ReplyQualityGate.EmergencyFallback(DialogueAct.Sharing);
 
-        Assert.True(reply.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length > 4);
-        Assert.DoesNotContain("?", reply);
+        Assert.DoesNotContain("TikTok", reply, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("тривог", reply, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("невдало сформулював", reply, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void GateRequiresContextAnchorForShortReplies()
+    {
+        var quality = ReplyQualityGate.Check(
+            DialogueAct.ShortReply,
+            "Угу",
+            "До речі, завтра буде цікава погода.",
+            ["У мене нема сил", "Угу"]);
+
+        Assert.False(quality.Accept);
+        Assert.Contains("прив'яжи", quality.Feedback, StringComparison.OrdinalIgnoreCase);
     }
 
 }
