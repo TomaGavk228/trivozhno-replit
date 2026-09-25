@@ -8,7 +8,7 @@ public sealed class BotOptions
     public string TelegramToken { get; init; } = "";
     public string GroqKey { get; init; } = "";
     public long ChannelId { get; init; }
-    public string Model { get; init; } = "openai/gpt-oss-120b";
+    public string Model { get; init; } = "qwen/qwen3.8-27b";
     public string FallbackModel { get; init; } = "openai/gpt-oss-120b";
     public string SummaryModel { get; init; } = "openai/gpt-oss-20b";
     public int AiConcurrency { get; init; } = 2;

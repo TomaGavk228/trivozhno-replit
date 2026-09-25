@@ -20,6 +20,11 @@ public sealed record AiTurnResult(AiTurnDraft Turn, string Model, int Tokens);
 public interface IAiClient
 {
     Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct);
+    Task<AiResult> CompleteWithModel(
+        IReadOnlyList<AiMessage> messages,
+        string model,
+        double temperature,
+        CancellationToken ct);
     Task<AiTurnResult> CompleteTurn(IReadOnlyList<AiMessage> messages, CancellationToken ct);
 }
 public sealed class AiUnavailableException(string reason = "unavailable") : Exception(reason)

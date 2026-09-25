@@ -121,7 +121,7 @@ public sealed partial class GroqClient
         {
             // Live conversation must follow the user's meaning and previous refusals.
             // Keep summary/legacy costs unchanged; evaluate this setting by manual chat.
-            body["reasoning_effort"] = summary || structuredTurn ? "low" : "medium";
+            body["reasoning_effort"] = "low";
             body["include_reasoning"] = false;
         }
         else if (model.StartsWith("qwen/", StringComparison.Ordinal))
@@ -153,6 +153,29 @@ public sealed partial class GroqClient
         try { return await CompleteRaw(messages, summary, structuredTurn: false, ct); }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         { throw new AiUnavailableException("job_budget_exhausted"); }
+    }
+
+    public async Task<AiResult> CompleteWithModel(
+        IReadOnlyList<AiMessage> messages,
+        string model,
+        double temperature,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await CompleteRaw(
+                messages,
+                summary: false,
+                structuredTurn: false,
+                ct,
+                forcedModel: model,
+                forcedTemperature: temperature,
+                exactModel: true);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new AiUnavailableException("job_budget_exhausted");
+        }
     }
 
     public async Task<AiTurnResult> CompleteTurn(

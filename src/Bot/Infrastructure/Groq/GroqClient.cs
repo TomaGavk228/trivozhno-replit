@@ -17,20 +17,26 @@ public sealed partial class GroqClient(
         IReadOnlyList<AiMessage> messages,
         bool summary,
         bool structuredTurn,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? forcedModel = null,
+        double? forcedTemperature = null,
+        bool exactModel = false)
     {
         // Normalize before quota accounting, payload generation and request logs.
         // Payload builders also normalize for direct callers; Prepare is idempotent.
         var originalInstructionBlocks = messages.Count(m => m.Role is "system" or "developer");
         messages = GroqMessageLayout.Prepare(messages);
-        log.LogInformation("Groq layout; instruction blocks {Before} -> {After}; instruction chars {Chars}; last role {LastRole}",
+        var systemContent = messages.FirstOrDefault(m => m.Role == "system")?.Content ?? "";
+        var systemSha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(systemContent)))[..12];
+        log.LogInformation("Groq layout; instruction blocks {Before} -> {After}; instruction chars {Chars}; system SHA {SystemSha}; last role {LastRole}",
             originalInstructionBlocks, messages.Count(m => m.Role == "system"),
-            messages.FirstOrDefault(m => m.Role == "system")?.Content.Length ?? 0,
+            systemContent.Length, systemSha,
             messages.LastOrDefault()?.Role ?? "none");
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
         budget.CancelAfter(TimeSpan.FromSeconds(options.JobBudget));
         var token = budget.Token;
-        var model = summary ? options.SummaryModel : options.Model;
+        var model = forcedModel ?? (summary ? options.SummaryModel : options.Model);
         var briefChat = !summary && !structuredTurn && !ChatReplyBudget.WantsDetail(messages);
         var completionTokens = summary
             ? SummaryCompletionTokens
@@ -40,9 +46,10 @@ public sealed partial class GroqClient(
         var admission = Stopwatch.StartNew();
         using var slot = await quota.Enter(token);
         log.LogInformation("Groq slot wait {ElapsedMs} ms", admission.ElapsedMilliseconds);
-        for (var attempt = 0; attempt < 3; attempt++)
+        var maxAttempts = exactModel ? 1 : 3;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            if (attempt == 2) model = options.FallbackModel;
+            if (!exactModel && attempt == 2) model = options.FallbackModel;
 
             admission.Restart();
             var inputEstimate = TokenEstimate.Count(messages) + (structuredTurn ? TurnSchemaReserve : 0);
@@ -68,6 +75,7 @@ public sealed partial class GroqClient(
                     ? TurnPayload(model, messages, completionTokens)
                     : Payload(model, messages, summary);
                 payload["max_completion_tokens"] = completionTokens;
+                if (forcedTemperature is not null) payload["temperature"] = forcedTemperature.Value;
                 req.Content = JsonContent.Create(payload);
                 log.LogInformation("Groq request; model {Model}; reasoning {Effort}; output budget {Budget}; roles {Roles}; last user chars {UserChars}",
                     model, payload.GetValueOrDefault("reasoning_effort") ?? "default",
@@ -142,7 +150,7 @@ public sealed partial class GroqClient(
                     if (code is "model_not_found" or "model_decommissioned" or "model_not_supported" ||
                         response.StatusCode == HttpStatusCode.NotFound)
                     {
-                        if (attempt < 2 && model != options.FallbackModel)
+                        if (!exactModel && attempt < 2 && model != options.FallbackModel)
                         {
                             attempt = 1;
                             continue;

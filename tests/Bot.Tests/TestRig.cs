@@ -27,6 +27,7 @@ public sealed class TestClock : IClock
 public sealed class FakeAi : IAiClient
 {
     public ConcurrentQueue<IReadOnlyList<AiMessage>> Requests { get; } = new();
+    public ConcurrentQueue<string> RequestedModels { get; } = new();
     public ConcurrentQueue<AiTurnDraft> TurnDrafts { get; } = new();
     public TaskCompletionSource<bool> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource<AiResult>? Pause { get; set; }
@@ -38,6 +39,16 @@ public sealed class FakeAi : IAiClient
         if (Fail) throw new AiUnavailableException();
         if (Pause is not null) return await Pause.Task.WaitAsync(ct);
         return new(summary ? "Користувач хоче уважного спілкування." : "Відповідь: " + LastUser(messages), "fake-ai", 30);
+    }
+
+    public async Task<AiResult> CompleteWithModel(
+        IReadOnlyList<AiMessage> messages,
+        string model,
+        double temperature,
+        CancellationToken ct)
+    {
+        RequestedModels.Enqueue(model);
+        return await Complete(messages, summary: false, ct);
     }
 
     public async Task<AiTurnResult> CompleteTurn(IReadOnlyList<AiMessage> messages, CancellationToken ct)
