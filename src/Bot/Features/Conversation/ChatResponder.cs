@@ -78,37 +78,30 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         {
             log.LogInformation("Reply quality gate rejected draft; act {Act}; reason {Reason}", act, quality.Feedback);
 
-            var qwenRepairMessages = BuildRepairMessages(quality, result.Text);
-            AiResult? qwenRepair = null;
+            // One retry, same model, same voice. We used to fall through to a second
+            // model at a different temperature (and finally to a hardcoded Ukrainian
+            // stock phrase) whenever the gate rejected twice -- that's how a reply
+            // stopped sounding like "between thoughts" and started sounding like a
+            // committee. The gate is minimal now, so this path is rare; when it does
+            // fire, an imperfect-but-natural second draft beats a canned line.
             try
             {
-                qwenRepair = await ai.CompleteWithModel(
-                    GroqMessageLayout.WithExamples(qwenRepairMessages, context.Examples),
+                var repairMessages = BuildRepairMessages(quality, result.Text);
+                var repaired = await ai.CompleteWithModel(
+                    GroqMessageLayout.WithExamples(repairMessages, context.Examples),
                     options.Model,
-                    0.30,
+                    0.55,
                     ct);
+
+                result = string.IsNullOrWhiteSpace(repaired.Text)
+                    ? result with { Text = ReplyQualityGate.EmergencyFallback(act) }
+                    : repaired;
             }
             catch (AiUnavailableException e)
             {
-                log.LogWarning("Qwen repair unavailable; reason {Reason}", e.Reason);
-            }
-
-            if (qwenRepair is not null)
-            {
-                var qwenQuality = ReplyQualityGate.Check(act, current, qwenRepair.Text, recentUser);
-                if (qwenQuality.Accept)
-                {
-                    result = qwenRepair;
-                }
-                else
-                {
-                    log.LogInformation("Qwen repair rejected; act {Act}; reason {Reason}", act, qwenQuality.Feedback);
-                    result = await TryFallbackRepair(qwenQuality, qwenRepair.Text, result);
-                }
-            }
-            else
-            {
-                result = await TryFallbackRepair(quality, result.Text, result);
+                log.LogWarning("Reply repair unavailable; reason {Reason}", e.Reason);
+                if (string.IsNullOrWhiteSpace(result.Text))
+                    result = result with { Text = ReplyQualityGate.EmergencyFallback(act) };
             }
         }
 
@@ -133,45 +126,6 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
                         current,
                         recentUser)));
             return repairMessages;
-        }
-
-        async Task<AiResult> TryFallbackRepair(
-            ReplyQualityResult failed,
-            string draft,
-            AiResult baseResult)
-        {
-            try
-            {
-                var repairMessages = BuildRepairMessages(failed, draft);
-                var fallbackRepair = await ai.CompleteWithModel(
-                    GroqMessageLayout.WithExamples(repairMessages, context.Examples),
-                    options.FallbackModel,
-                    0.25,
-                    ct);
-
-                var fallbackQuality = ReplyQualityGate.Check(
-                    act,
-                    current,
-                    fallbackRepair.Text,
-                    recentUser);
-
-                if (fallbackQuality.Accept)
-                    return fallbackRepair;
-
-                log.LogWarning(
-                    "Fallback-model repair rejected; act {Act}; reason {Reason}",
-                    act,
-                    fallbackQuality.Feedback);
-            }
-            catch (AiUnavailableException e)
-            {
-                log.LogWarning("Fallback-model repair unavailable; reason {Reason}", e.Reason);
-            }
-
-            return baseResult with
-            {
-                Text = ReplyQualityGate.EmergencyFallback(act)
-            };
         }
 
         bool Add(string text)
