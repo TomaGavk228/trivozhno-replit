@@ -36,11 +36,23 @@ public static class ReplyQualityGate
         RegexOptions.CultureInvariant,
         TimeSpan.FromMilliseconds(100));
 
-    public static ReplyQualityResult Check(DialogueAct act, string current, string reply)
+    private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "і","й","та","а","але","бо","що","шо","це","я","ти","в","у","на","до","з","із","зі","не","ні",
+        "мені","тебе","мене","воно","вони","вона","він","ще","як","так","то","там","тут","просто","дуже",
+        "реально","зараз","вже","ну","угу","ага","ок","окей","погано","добре","нічого","не знаю"
+    };
+
+    public static ReplyQualityResult Check(
+        DialogueAct act,
+        string current,
+        string reply,
+        IReadOnlyList<string>? recentUser = null)
     {
         if (string.IsNullOrWhiteSpace(reply))
             return Fail("Сформулюй одну завершену коротку репліку.");
 
+        recentUser ??= [];
         var text = reply.Trim();
 
         if (Cliche.IsMatch(text))
@@ -62,6 +74,8 @@ public static class ReplyQualityGate
                 return Fail("Продовж розмову коротким твердженням без нового завдання або обов'язкового питання.");
             if (DeadEnd.IsMatch(text) || WordCount(text) < 4)
                 return Fail("Не обривай діалог сухим підтвердженням. Додай одну маленьку думку з поточної теми, щоб бот теж ніс розмову.");
+            if (!HasContextAnchor(text, current, recentUser))
+                return Fail("Відповідь відірвана від переписки. Прив'яжи її до конкретної деталі з останніх реплік і не додавай нових фактів.");
         }
 
         if (act == DialogueAct.Sharing && DistressShare.IsMatch(current))
@@ -70,47 +84,75 @@ public static class ReplyQualityGate
                 return Fail("На цю репліку відгукнися твердженням по суті, без уточнювального питання.");
             if (PushyImperative.IsMatch(text))
                 return Fail("Людина просто ділиться станом. Відгукнися на нього без поради або завдання.");
+            if (!HasContextAnchor(text, current, recentUser))
+                return Fail("Відповідь має бути прив'язана до того, що людина реально сказала, без нових деталей.");
         }
 
-        if (act == DialogueAct.Advice && CannedAdvice.IsMatch(text))
-            return Fail("Це універсальна self-help вправа. Замість неї дай одну контекстну пораду, що випливає саме з цієї переписки.");
+        if (act == DialogueAct.Advice)
+        {
+            if (CannedAdvice.IsMatch(text))
+                return Fail("Це універсальна self-help вправа. Замість неї дай одну контекстну пораду, що випливає саме з цієї переписки.");
+            if (CountImperatives(text) > 1)
+                return Fail("Забагато завдань. Залиш одну конкретну пораду.");
+            if (!HasContextAnchor(text, current, recentUser))
+                return Fail("Порада має явно спиратися на контекст цієї переписки, а не бути універсальною.");
+        }
+
+        if (act == DialogueAct.Question && DistressShare.IsMatch(current) && CannedAdvice.IsMatch(text))
+            return Fail("Не підміняй відповідь універсальною self-help технікою.");
 
         return Pass();
     }
 
-    public static string RetryInstruction(ReplyQualityResult result, string draft) =>
-        "Попередня чернетка не підходить для цього ходу. " + result.Feedback +
-        "\nСформулюй іншу репліку з нуля. Не пояснюй виправлення.\nЧернетка, яку НЕ треба повторювати: " +
-        draft.Trim();
-
-    public static string SafeFallback(
+    public static string RetryInstruction(
+        ReplyQualityResult result,
+        string draft,
         DialogueAct act,
         string current,
         IReadOnlyList<string>? recentUser = null)
     {
         recentUser ??= [];
-        var previous = recentUser
-            .Where(x => !string.Equals(x, current, StringComparison.Ordinal))
-            .TakeLast(4)
-            .ToArray();
+        var context = string.Join("\n", recentUser.TakeLast(4).Select(x => "- " + x));
 
-        return act switch
-        {
-            DialogueAct.Greeting => "Привіт)",
-            DialogueAct.Refusal => "Окей, тоді без цього. І сам факт, що зараз навіть на прості речі нема бажання, уже багато каже про те, наскільки ти вимотався.",
-            DialogueAct.ShortReply when current.Trim().Equals("погано", StringComparison.OrdinalIgnoreCase) =>
-                "Мда, тоді зараз точно не до великих рішень. Схоже, день просто дотиснув тебе.",
-            DialogueAct.ShortReply =>
-                "Та, тут і без пояснень зрозуміло, що сил небагато. Можемо просто триматися цієї теми без задач для тебе.",
-            DialogueAct.Advice =>
-                "Не намагайся вирішити все одразу. З того, що ти вже написав, зараз важливіше зменшити тиск на себе, а до конкретних кроків повернутися, коли буде трохи більше сил.",
-            DialogueAct.Question =>
-                "Коротко: тут немає однієї кнопки, яка все вимкне. Краще дивитися на те, що саме підсилює цей стан у тебе, і розбирати по одному шматку.",
-            DialogueAct.Goodbye => "Добраніч)",
-            _ =>
-                "Це реально схоже на день, який просто висмоктав сили. І TikTok тут більше виглядає як спосіб нічого вже не тягнути, ніж як відпочинок."
-        };
+        return
+            "Попередня чернетка не підходить для цього ходу. " + result.Feedback +
+            "\nДія цього ходу: " + act + "." +
+            "\nОстання репліка: " + current +
+            (context.Length > 0 ? "\nОстанні репліки людини:\n" + context : "") +
+            "\nСформулюй іншу репліку з нуля. Використовуй тільки факти з переписки. Не пояснюй виправлення." +
+            "\nЧернетка, яку НЕ треба повторювати: " + draft.Trim();
     }
+
+    public static string EmergencyFallback(DialogueAct act) => act switch
+    {
+        DialogueAct.Greeting => "Привіт)",
+        DialogueAct.Refusal => "Окей, тоді без цього.",
+        DialogueAct.Goodbye => "Добраніч)",
+        _ => "Я зараз невдало сформулював відповідь. Давай без цієї репліки."
+    };
+
+    private static bool HasContextAnchor(
+        string reply,
+        string current,
+        IReadOnlyList<string> recentUser)
+    {
+        var context = string.Join(' ', recentUser.Append(current));
+        var contextTerms = Terms(context);
+        if (contextTerms.Count == 0) return true;
+        var replyTerms = Terms(reply);
+        return replyTerms.Overlaps(contextTerms);
+    }
+
+    private static HashSet<string> Terms(string text)
+    {
+        return Regex.Matches(text.ToLowerInvariant(), @"[\p{L}\p{N}]{3,}")
+            .Select(x => x.Value)
+            .Where(x => !StopWords.Contains(x))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static int CountImperatives(string text) =>
+        PushyImperative.Matches(text).Count;
 
     private static int WordCount(string text) =>
         text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
