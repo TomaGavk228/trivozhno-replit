@@ -4,44 +4,23 @@ namespace Trivozhno.Features.Conversation;
 
 public sealed record ReplyQualityResult(bool Accept, string Feedback);
 
+// Deliberately thin. This used to be a word-blacklist censor (canned-advice
+// stems, "unsupported physiology" phrases, imperative-verb counts, cliche
+// phrases, stemmed context-anchor matching) that rejected natural replies for
+// sounding too plain or too much like normal texting -- exactly the opposite
+// of what a "talks like a friend" bot needs. The actual voice/style contract
+// lives in chat-v1.txt and is enforced by the model, not by regex here.
+// This gate only catches structural failures the prompt can't self-correct:
+// an empty draft, a wall of text in a 1-2 sentence chat, or a dead silence
+// right after the person opened up or set a boundary.
 public static class ReplyQualityGate
 {
-    private static readonly Regex CannedAdvice = new(
-        @"(?i)\b(4\s*[-–]\s*7\s*[-–]\s*8|дихаль\w*|вдих\w*|видих\w*|запиш\w*|випиш\w*|нотат\w*|блокнот\w*|випий\w*|склянк\w*\s+вод\w*|пройд\w*|прогуля\w*|послухай\w*\s+.*муз|подкаст\w*|заземл\w*)\b",
-        RegexOptions.CultureInvariant,
-        TimeSpan.FromMilliseconds(100));
-
-    private static readonly Regex UnsupportedPhysiology = new(
-        @"(?i)\b(серцебит\w*|кортизол\w*|нервов\w*\s+систем\w*|дає\s+мозку\s+сигнал|фізично\s+(сповільнює|знижує)|знижує\s+(рівень\s+)?тривог\w*)\b",
-        RegexOptions.CultureInvariant,
-        TimeSpan.FromMilliseconds(100));
-
-    private static readonly Regex PushyImperative = new(
-        @"(?i)\b(спробуй|зроби|відклади|встань|випий|запиши|послухай|пройди|подихай|закрий|увімкни|включи)\b",
-        RegexOptions.CultureInvariant,
-        TimeSpan.FromMilliseconds(100));
-
-    private static readonly Regex Cliche = new(
-        @"(?i)(якщо\s+захочеш.{0,25}я\s+тут|\bя\s+тут\b|\bтримайся\b|\bбез\s+тиску\b)",
-        RegexOptions.CultureInvariant,
-        TimeSpan.FromMilliseconds(100));
-
     private static readonly Regex DeadEnd = new(
         @"(?i)^(добре|ок|окей|понятно|зрозуміло|угу|ага|ясно)[.! )]*$",
         RegexOptions.CultureInvariant,
         TimeSpan.FromMilliseconds(100));
 
-    private static readonly Regex DistressShare = new(
-        @"(?i)\b(треш|погано|фігово|сил\s+нема|нема\s+сил|тривож\w*|куп[аи]\s+думок|втом\w*|виснаж\w*)\b",
-        RegexOptions.CultureInvariant,
-        TimeSpan.FromMilliseconds(100));
-
-    private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "і","й","та","а","але","бо","що","шо","це","я","ти","в","у","на","до","з","із","зі","не","ні",
-        "мені","тебе","мене","воно","вони","вона","він","ще","як","так","то","там","тут","просто","дуже",
-        "реально","зараз","вже","ну","угу","ага","ок","окей","погано","добре","нічого","не знаю"
-    };
+    private const int MaxWords = 120;
 
     public static ReplyQualityResult Check(
         DialogueAct act,
@@ -52,54 +31,13 @@ public static class ReplyQualityGate
         if (string.IsNullOrWhiteSpace(reply))
             return Fail("Сформулюй одну завершену коротку репліку.");
 
-        recentUser ??= [];
         var text = reply.Trim();
 
-        if (Cliche.IsMatch(text))
-            return Fail("Заміни службове кліше на конкретну реакцію по цій переписці.");
+        if (WordCount(text) > MaxWords)
+            return Fail("Це занадто довго для звичайного чату. Скороти до 1–3 коротких речень.");
 
-        if (UnsupportedPhysiology.IsMatch(text))
-            return Fail("Прибери фізіологічне або медичне пояснення. Говори побутово й не обіцяй ефект.");
-
-        if (act == DialogueAct.Greeting)
-        {
-            if (text.Contains('?') || WordCount(text) > 8)
-                return Fail("Залиш тільки коротке привітання без питання й без нового змісту.");
-            return Pass();
-        }
-
-        if (act is DialogueAct.Refusal or DialogueAct.ShortReply)
-        {
-            if (text.Contains('?') || PushyImperative.IsMatch(text))
-                return Fail("Продовж розмову коротким твердженням без нового завдання або обов'язкового питання.");
-            if (DeadEnd.IsMatch(text) || WordCount(text) < 4)
-                return Fail("Не обривай діалог сухим підтвердженням. Додай одну маленьку думку з поточної теми, щоб бот теж ніс розмову.");
-            if (!HasContextAnchor(text, current, recentUser))
-                return Fail("Відповідь відірвана від переписки. Прив'яжи її до конкретної деталі з останніх реплік і не додавай нових фактів.");
-        }
-
-        if (act == DialogueAct.Sharing && DistressShare.IsMatch(current))
-        {
-            if (text.Contains('?'))
-                return Fail("На цю репліку відгукнися твердженням по суті, без уточнювального питання.");
-            if (PushyImperative.IsMatch(text))
-                return Fail("Людина просто ділиться станом. Відгукнися на нього без поради або завдання.");
-            if (!HasContextAnchor(text, current, recentUser))
-                return Fail("Відповідь має бути прив'язана до того, що людина реально сказала, без нових деталей.");
-        }
-
-        if (act == DialogueAct.Advice)
-        {
-            if (CannedAdvice.IsMatch(text))
-                return Fail("Це універсальна self-help вправа. Замість неї дай одну контекстну пораду, що випливає саме з цієї переписки.");
-            if (CountImperatives(text) > 1)
-                return Fail("Забагато завдань. Залиш одну конкретну пораду.");
-            if (!HasContextAnchor(text, current, recentUser))
-                return Fail("Порада має явно спиратися на контекст цієї переписки, а не бути універсальною.");
-        }
-
-        if (act == DialogueAct.Question && DistressShare.IsMatch(current) && CannedAdvice.IsMatch(text))
-            return Fail("Не підміняй відповідь універсальною self-help технікою.");
+        if (act is DialogueAct.Refusal or DialogueAct.ShortReply && DeadEnd.IsMatch(text))
+            return Fail("Не обривай діалог сухим підтвердженням. Додай одну маленьку думку з поточної теми, щоб самому нести розмову далі.");
 
         return Pass();
     }
@@ -130,36 +68,6 @@ public static class ReplyQualityGate
         DialogueAct.Goodbye => "Добраніч)",
         _ => "Я зараз невдало сформулював відповідь. Давай без цієї репліки."
     };
-
-    private static bool HasContextAnchor(
-        string reply,
-        string current,
-        IReadOnlyList<string> recentUser)
-    {
-        var context = string.Join(' ', recentUser.Append(current));
-        var contextTerms = Terms(context);
-        if (contextTerms.Count == 0) return true;
-        var replyTerms = Terms(reply);
-        return replyTerms.Any(r => contextTerms.Any(c => SameStem(r, c)));
-    }
-
-    private static bool SameStem(string a, string b)
-    {
-        if (string.Equals(a, b, StringComparison.OrdinalIgnoreCase)) return true;
-        if (a.Length < 5 || b.Length < 5) return false;
-        return string.Equals(a[..5], b[..5], StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static HashSet<string> Terms(string text)
-    {
-        return Regex.Matches(text.ToLowerInvariant(), @"[\p{L}\p{N}]{3,}")
-            .Select(x => x.Value)
-            .Where(x => !StopWords.Contains(x))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static int CountImperatives(string text) =>
-        PushyImperative.Matches(text).Count;
 
     private static int WordCount(string text) =>
         text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
