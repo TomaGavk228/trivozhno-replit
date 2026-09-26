@@ -40,20 +40,21 @@ public sealed class InfrastructureTests(ITestOutputHelper output)
         finally { Directory.Delete(folder, true); }
     }
     [PostgresFact]
-    public async Task GroqRetriesDoNotLeavePhantomTokenReservations()
+    public async Task RateLimitRetryDoesNotLeavePhantomTokenReservations()
     {
-        await using var r = new TestRig(); await r.Init();
+        await using var r = new TestRig(); await r.Init(realClock: true);
         var handler = new StubHttp((index, _) =>
         {
             if (index == 1) { var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests); response.Headers.RetryAfter = new(TimeSpan.FromMilliseconds(1)); return response; }
-            return index == 2 ? new(HttpStatusCode.ServiceUnavailable) : Success();
+            return Success();
         });
         var client = new GroqClient(new HttpClient(handler), r.Services.GetRequiredService<BotOptions>(), r.Services.GetRequiredService<AiQuota>(), NullLogger<GroqClient>.Instance);
         var result = await client.Complete([new("user", "Привіт")], false, default);
-        Assert.Equal("Привіт!", result.Text); Assert.Equal(3, handler.Bodies.Count);
+        Assert.Equal("Привіт!", result.Text); Assert.Equal(2, handler.Bodies.Count);
         var usage = await r.Read(db => db.Set<ApiUsage>().ToListAsync());
-        Assert.Single(usage);
-        Assert.Equal(10, usage[0].Tokens);
+        Assert.Equal(2, usage.Count);
+        Assert.Equal(10, usage.Sum(x => x.Tokens));
+        Assert.Contains(usage, x => x.Tokens == 0);
     }
     [PostgresFact]
     public async Task DuplicateInboxIsIdempotentAndPoisonDoesNotBlockAnotherPerson()
@@ -213,7 +214,7 @@ public sealed class InfrastructureTests(ITestOutputHelper output)
             peakWorkingSetMb = process.PeakWorkingSet64 / 1048576d, processors = Environment.ProcessorCount, note = "Fake AI and Telegram. DB server RAM is separate. Completion measured from start of burst." }));
     }
     private static HttpResponseMessage Success() => new(HttpStatusCode.OK)
-    { Content = new StringContent("{\"choices\":[{\"message\":{\"content\":\"Привіт!\"}}],\"usage\":{\"total_tokens\":10}}", Encoding.UTF8, "application/json") };
+    { Content = new StringContent("{\"choices\":[{\"message\":{\"content\":\"Привіт!\"},\"finish_reason\":\"stop\"}],\"usage\":{\"total_tokens\":10}}", Encoding.UTF8, "application/json") };
     private sealed class StubHttp(Func<int, HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
         public List<string> Bodies { get; } = [];

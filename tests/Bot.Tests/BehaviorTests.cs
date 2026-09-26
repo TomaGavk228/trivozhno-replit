@@ -22,19 +22,18 @@ public sealed class BehaviorTests
         Assert.Equal("Текст чернетки", await r.Read(db => db.DraftParts.Select(x => x.Text).SingleAsync()));
     }
     [PostgresFact]
-    public async Task RapidMessagesAreAnsweredInOrderWithPreviousAnswerAndNoCrossUserContext()
+    public async Task RapidMessagesMakeOneCurrentTurnWithNoCrossUserContext()
     {
         await using var r = new TestRig(); await r.Init(); await r.StartChat(); await r.StartChat(2);
         await r.Text("Перша думка"); await r.Text("Друга думка"); await r.Text("Інша людина", 2);
-        Assert.True(await r.Processor.Step(default)); Assert.True(await r.Processor.Step(default)); Assert.True(await r.Processor.Step(default));
+        Assert.True(await r.Processor.Step(default)); Assert.True(await r.Processor.Step(default)); Assert.False(await r.Processor.Step(default));
         var requests = r.Ai.Requests.ToArray();
-        Assert.Equal("Перша думка", requests[0].Last().Content);
-        Assert.Equal("Друга думка", requests[1].Last().Content);
-        Assert.Contains(requests[1], x => x.Role == "assistant" && x.Content == "Відповідь: Перша думка");
-        Assert.DoesNotContain(requests[2], x => x.Content.Contains("Перша думка"));
+        Assert.Equal("Перша думка\nДруга думка", requests[0].Last().Content);
+        Assert.Equal("Інша людина", requests[1].Last().Content);
+        Assert.DoesNotContain(requests[1], x => x.Content.Contains("Перша думка"));
         await r.DrainOutbox();
         var answers = r.Telegram.Sent.Where(x => x.Destination == 1 && x.Text.StartsWith("Відповідь:")).ToArray();
-        Assert.Equal(2, answers.Length); Assert.All(answers, x => { Assert.DoesNotContain("inline_keyboard", x.Markup ?? ""); Assert.Contains("Завершити чат", x.Markup is null ? "" : System.Text.Json.JsonDocument.Parse(x.Markup).RootElement.GetProperty("keyboard")[0][0].GetProperty("text").GetString()); });
+        Assert.Single(answers); Assert.All(answers, x => { Assert.DoesNotContain("inline_keyboard", x.Markup ?? ""); Assert.Contains("Завершити чат", x.Markup is null ? "" : System.Text.Json.JsonDocument.Parse(x.Markup).RootElement.GetProperty("keyboard")[0][0].GetProperty("text").GetString()); });
     }
     [PostgresFact]
     public async Task ExitKeepsMemoryAndSuppressesLateAnswer()
@@ -179,39 +178,38 @@ public sealed class BehaviorTests
         await r.Text("/menu"); await r.Click("menu:confession"); Assert.Equal(UserState.ConfessionDraft, (await r.User()).State);
     }
     [PostgresFact]
-    public async Task SummaryFailureKeepsMessagesAndSuccessfulSummaryRetainsRecentTwelve()
+    public async Task SummaryFailureKeepsMessagesAndSuccessfulSummaryAdvancesCursor()
     {
         await using var r = new TestRig(); await r.Init(); await r.StartChat();
-        for (var i = 0; i < 18; i++) { await r.Text("Думка " + i); await r.Processor.Step(default); }
+        for (var i = 0; i < 18; i++) { await r.Text("Думка " + i); await r.Processor.Step(default); await r.DrainOutbox(); }
         var u = await r.User(); r.Ai.Fail = true;
         using (var s = r.Services.CreateScope()) await Assert.ThrowsAsync<AiUnavailableException>(() => s.ServiceProvider.GetRequiredService<IConversationMemory>().Summarize(u.Id, u.MemoryVersion, default));
         Assert.Equal(36, await r.Read(db => db.Messages.CountAsync()));
         r.Ai.Fail = false;
         using (var s = r.Services.CreateScope()) await s.ServiceProvider.GetRequiredService<IConversationMemory>().Summarize(u.Id, u.MemoryVersion, default);
-        Assert.Equal(12, await r.Read(db => db.Messages.CountAsync())); Assert.Equal(1, await r.Read(db => db.Summaries.CountAsync()));
+        // Summarization advances a cursor but keeps the original conversation
+        // for export and deletion under the user's control.
+        Assert.Equal(36, await r.Read(db => db.Messages.CountAsync()));
+        Assert.True(await r.Read(db => db.Summaries.Select(x => x.CoveredThroughId).SingleAsync()) > 0);
     }
     [PostgresFact]
-    public async Task ConversationStateFromPreviousTurnIsPassedIntoNextTurn()
+    public async Task DeliveredPreviousTurnIsPassedIntoNextTurn()
     {
         await using var r = new TestRig(); await r.Init(); await r.StartChat();
-        r.Ai.TurnDrafts.Enqueue(new(
-            "користувач відкинув пораду; не тиснути питаннями; краще переключити розмову",
-            "", [], "ок, тоді без порад"));
-
         await r.Text("нічого не хочу");
         await r.Processor.Step(default);
+        await r.DrainOutbox();
 
         await r.Text("і шо");
         await r.Processor.Step(default);
 
         var second = r.Ai.Requests.ToArray()[1];
-        Assert.Contains(second, x => x.Role == "system" &&
-            x.Content.Contains("користувач відкинув пораду") &&
-            x.Content.Contains("не тиснути питаннями"));
+        Assert.Contains(second, x => x.Role == "user" && x.Content == "нічого не хочу");
+        Assert.Contains(second, x => x.Role == "assistant" && x.Content == "Відповідь: нічого не хочу");
     }
 
     [PostgresFact]
-    public async Task BookGroundingHappensOnlyAfterModelRequestsKnowledge()
+    public async Task BookGroundingHappensOnlyOnExplicitBookRequest()
     {
         await using var r = new TestRig(); await r.Init(); await r.StartChat();
         var u = await r.User();
@@ -238,23 +236,23 @@ public sealed class BehaviorTests
             await db.SaveChangesAsync();
         });
 
-        r.Ai.TurnDrafts.Enqueue(new(
-            "користувач прямо попросив конкретний спосіб заспокоїтися",
-            "тривога напруга", [], ""));
-        r.Ai.TurnDrafts.Enqueue(new(
-            "користувач попросив допомогу; відповіли коротко без лекції",
-            "", [], "я б почав з однієї простої речі, без десяти вправ одразу"));
-
         await r.Text("що мені робити щоб заспокоїтися?");
+        await r.Processor.Step(default);
+        Assert.Single(r.Ai.Requests);
+        var withoutBook = await r.Read(db => db.Messages.Where(x => x.Role == "assistant").Select(x => x.SourcesJson).SingleAsync());
+        using (var emptyMetadata = System.Text.Json.JsonDocument.Parse(withoutBook))
+            Assert.Empty(emptyMetadata.RootElement.GetProperty("sources").EnumerateArray());
+        await r.DrainOutbox();
+        await r.Text("поясни, що пише книга про тривогу. Там згадана напруга?");
         await r.Processor.Step(default);
 
         var requests = r.Ai.Requests.ToArray();
         Assert.Equal(2, requests.Length);
         Assert.Contains(requests[1], x => x.Role == "system" &&
-            x.Content.Contains("НЕДОВІРЕНІ ДАНІ З КНИГИ") &&
-            x.Content.Contains("не змінюй голос друга на психолога"));
+            x.Content.Contains("Довідковий фрагмент") &&
+            x.Content.Contains("тривогу"));
 
-        var assistant = await r.Read(db => db.Messages.SingleAsync(x => x.Role == "assistant"));
+        var assistant = await r.Read(db => db.Messages.Where(x => x.Role == "assistant").OrderByDescending(x => x.Id).FirstAsync());
         using var metadata = System.Text.Json.JsonDocument.Parse(assistant.SourcesJson);
         Assert.Equal("Перевірена психологічна книга",
             metadata.RootElement.GetProperty("sources")[0].GetProperty("title").GetString());
@@ -262,22 +260,16 @@ public sealed class BehaviorTests
 
 
     [PostgresFact]
-    public async Task StableStylePreferencePersistsAcrossChatSessions()
+    public async Task SavedStylePreferenceIsAvailableAcrossChatSessions()
     {
         await using var r = new TestRig(); await r.Init(); await r.StartChat();
 
-        r.Ai.TurnDrafts.Enqueue(new(
-            "користувач прямо сказав, що йому заходить невимушений гумор",
-            "",
-            ["likes_humor", "light_punctuation"],
-            "ахах, окей"));
-
-        await r.Text("оце вже норм, так прикольніше");
-        await r.Processor.Step(default);
-
-        var learned = await r.User();
-        Assert.Contains("likes_humor", learned.ChatStyleProfile);
-        Assert.Contains("light_punctuation", learned.ChatStyleProfile);
+        await r.WithDb(async db =>
+        {
+            var user = await db.Users.SingleAsync();
+            user.ChatStyleProfile = "likes_humor,light_punctuation";
+            await db.SaveChangesAsync();
+        });
 
         await r.Text("/menu");
         await r.Click("menu:talk");

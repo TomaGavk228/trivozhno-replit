@@ -47,7 +47,8 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
             .TakeLast(5).Select(m => m.Content).ToArray();
 
         var act = ClassifyDialogueAct(current);
-        Add(TurnGuidance(act, current, recentUser));
+        // The conversation and one voice prompt provide the turn guidance. A
+        // regex label must not force the same scripted reaction every time.
 
         // Books remain available on explicit request, never triggered by sadness/anxiety.
         if (current.Contains("книг", StringComparison.OrdinalIgnoreCase) &&
@@ -176,56 +177,4 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         return DialogueAct.Sharing;
     }
 
-    public static string TurnGuidance(
-        DialogueAct act,
-        string current,
-        IReadOnlyList<string>? recentUser = null)
-    {
-        recentUser ??= [];
-        var previous = recentUser
-            .Where(x => !string.Equals(x, current, StringComparison.Ordinal))
-            .TakeLast(4)
-            .ToArray();
-        var recentRefusal = previous.Any(x =>
-            ClassifyDialogueAct(x) is DialogueAct.Refusal);
-
-        return act switch
-        {
-            DialogueAct.Greeting =>
-                "ДІЯ ВІДПОВІДІ: ПРИВІТАТИСЯ. Напиши одне коротке природне привітання і завершуй репліку.",
-
-            DialogueAct.Goodbye =>
-                "ДІЯ ВІДПОВІДІ: ПОПРОЩАТИСЯ. Відповідай одним коротким природним прощанням.",
-
-            DialogueAct.Refusal =>
-                "ДІЯ ВІДПОВІДІ: ПРИЙНЯТИ МЕЖУ Й ПРОДОВЖИТИ РОЗМОВУ САМОМУ. Людина відмовилась від дії, а не від розмови. " +
-                "Коротко прийми це, а потім додай одну маленьку думку або спостереження з поточної теми, яке можна підхопити або просто прочитати. " +
-                "Не залишай відповідь на рівні «добре/зрозуміло».",
-
-            DialogueAct.ShortReply =>
-                "ДІЯ ВІДПОВІДІ: ПІДХОПИТИ РОЗМОВУ САМОМУ. Коротка відповідь означає, що людині може бути важко тягнути діалог. " +
-                "Не просто підтвердь її. Додай один новий, але близький до теми шматок розмови: конкретне спостереження, невеликий контраст або думку, що випливає з попередніх реплік. " +
-                "Відповідь має бути легко підхопити, але вона не повинна вимагати відповіді.",
-
-            DialogueAct.Advice when recentRefusal =>
-                "ДІЯ ВІДПОВІДІ: ДАТИ ПОРАДУ ПІСЛЯ ВІДМОВИ ВІД АКТИВНОСТЕЙ. " +
-                "Людина вже показала, що зараз не хоче нічого робити. Дай одну пораду без завдання на цей момент: " +
-                "зменшити вимогу щось виправляти прямо зараз і відкласти рішення до появи сил. 1–2 короткі речення.",
-
-            DialogueAct.Advice =>
-                "ДІЯ ВІДПОВІДІ: ДАТИ ОДНУ ПОРАДУ. Спочатку врахуй останні репліки людини. " +
-                "Обери одну конкретну ідею, прив'язану до її ситуації, а не універсальну вправу. 1–2 короткі речення.",
-
-            DialogueAct.Question =>
-                "ДІЯ ВІДПОВІДІ: ПРЯМО ВІДПОВІСТИ НА ПИТАННЯ. Перше речення — сама відповідь. " +
-                "Друге можна додати лише якщо воно реально уточнює відповідь.",
-
-            _ =>
-                "ДІЯ ВІДПОВІДІ: ВІДГУКНУТИСЯ. Візьми одну конкретну деталь з останньої репліки й додай одну коротку думку по цій самій темі. " +
-                "Нова думка має спиратися лише на те, що вже є в переписці. Форма: 1–2 короткі твердження."
-        };
-    }
-
-    public static string TurnGuidance(string current, IReadOnlyList<string>? recentUser = null) =>
-        TurnGuidance(ClassifyDialogueAct(current), current, recentUser);
 }

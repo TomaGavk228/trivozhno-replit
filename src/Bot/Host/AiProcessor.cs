@@ -25,9 +25,9 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
         {
             using var scope = scopes.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<BotDb>();
-            var readyBefore = clock.UtcNow.AddMilliseconds(-300);
+            var legacyReadyBefore = clock.UtcNow.AddMilliseconds(-options.ChatQuietMilliseconds);
             job = await db.Messages.AsNoTracking().Where(x => x.Status == "queued" &&
-                    x.CreatedAt <= readyBefore &&
+                    (x.ReadyAt <= clock.UtcNow || x.ReadyAt == null && x.CreatedAt <= legacyReadyBefore) &&
                     !db.Messages.Any(y => y.UserId == x.UserId && (y.Status == "processing" || y.Status == "queued" && y.Id < x.Id)))
                 .OrderBy(x => x.Id).FirstOrDefaultAsync(ct);
             if (job is null) return false;
@@ -42,9 +42,11 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             var current = await db.Messages.SingleOrDefaultAsync(x => x.Id == job.Id, ct);
             if (current is null || current.Status != "queued") return true;
 
-            if (currentUser is null || currentUser.SessionId != job.SessionId || currentUser.MemoryVersion != job.MemoryVersion || !options.Conversation)
+            var session = await db.Sessions.SingleOrDefaultAsync(x => x.Id == job.SessionId, ct);
+            if (currentUser is null || session is null || session.Revision != job.TurnRevision ||
+                currentUser.SessionId != job.SessionId || currentUser.MemoryVersion != job.MemoryVersion || !options.Conversation)
                 current.Status = "cancelled";
-            else if (clock.UtcNow - current.CreatedAt > TimeSpan.FromSeconds(options.QueueWait) || current.Attempts >= 3)
+            else if (clock.UtcNow - (current.TurnStartedAt ?? current.CreatedAt) > TimeSpan.FromSeconds(options.QueueWait) || current.Attempts >= 3)
             {
                 current.Status = "unanswered";
                 scope.ServiceProvider.GetRequiredService<Ui>().Say(currentUser, "chat.expired");
@@ -123,8 +125,9 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             var u = await db.Users.SingleOrDefaultAsync(x => x.Id == user.Id, ct);
             var current = await db.Messages.SingleOrDefaultAsync(x => x.Id == job.Id, ct);
+            var session = await db.Sessions.SingleOrDefaultAsync(x => x.Id == job.SessionId, ct);
             if (u is null || current is null || current.Status != "processing" || current.Attempts != leaseAttempt ||
-                u.SessionId != job.SessionId || u.MemoryVersion != job.MemoryVersion) return true;
+                session?.Revision != job.TurnRevision || u.SessionId != job.SessionId || u.MemoryVersion != job.MemoryVersion) return true;
 
             var ui = scope.ServiceProvider.GetRequiredService<Ui>();
             if (result is null || context.HasMood && !u.MoodContextEnabled)
@@ -140,15 +143,16 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
                     UserId = u.Id,
                     SessionId = job.SessionId,
                     Role = "assistant",
-                    Text = result.Text,
-                    Status = "done",
+                    Text = "",
+                    Status = "pending_delivery",
                     ReplyToId = job.Id,
                     MemoryVersion = job.MemoryVersion,
                     CreatedAt = clock.UtcNow,
                     MoodDerived = context.HasMood,
                     SourcesJson = metadata
                 });
-                ui.Text(u, result.Text, ui.Reply("chat.end"), "ai", job.SessionId, job.MemoryVersion);
+                ui.Text(u, result.Text, ui.Reply("chat.end"), "ai", job.SessionId, job.MemoryVersion,
+                    turnRevision: job.TurnRevision, replyToId: job.Id);
             }
 
             current.LeaseUntil = null;

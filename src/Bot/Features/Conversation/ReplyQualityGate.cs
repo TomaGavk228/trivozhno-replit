@@ -1,25 +1,11 @@
-using System.Text.RegularExpressions;
-
 namespace Trivozhno.Features.Conversation;
 
 public sealed record ReplyQualityResult(bool Accept, string Feedback);
 
-// Deliberately thin. This used to be a word-blacklist censor (canned-advice
-// stems, "unsupported physiology" phrases, imperative-verb counts, cliche
-// phrases, stemmed context-anchor matching) that rejected natural replies for
-// sounding too plain or too much like normal texting -- exactly the opposite
-// of what a "talks like a friend" bot needs. The actual voice/style contract
-// lives in chat-v1.txt and is enforced by the model, not by regex here.
-// This gate only catches structural failures the prompt can't self-correct:
-// an empty draft, a wall of text in a 1-2 sentence chat, or a dead silence
-// right after the person opened up or set a boundary.
+// Only structural failures need a second model call. Voice and choice of
+// words are evaluated in dialogue, not rejected by brittle keyword rules.
 public static class ReplyQualityGate
 {
-    private static readonly Regex DeadEnd = new(
-        @"(?i)^(добре|ок|окей|понятно|зрозуміло|угу|ага|ясно)[.! )]*$",
-        RegexOptions.CultureInvariant,
-        TimeSpan.FromMilliseconds(100));
-
     private const int MaxWords = 120;
 
     public static ReplyQualityResult Check(
@@ -35,9 +21,6 @@ public static class ReplyQualityGate
 
         if (WordCount(text) > MaxWords)
             return Fail("Це занадто довго для звичайного чату. Скороти до 1–3 коротких речень.");
-
-        if (act is DialogueAct.Refusal or DialogueAct.ShortReply && DeadEnd.IsMatch(text))
-            return Fail("Не обривай діалог сухим підтвердженням. Додай одну маленьку думку з поточної теми, щоб самому нести розмову далі.");
 
         return Pass();
     }
