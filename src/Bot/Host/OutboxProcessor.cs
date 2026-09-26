@@ -15,7 +15,10 @@ public sealed class TelegramRateGate(IClock clock, BotOptions options)
     }
     public void Used(long destination)
     {
-        next = clock.UtcNow.AddMilliseconds(1000d / options.TelegramPerSecond);
+        // The test configuration uses int.MaxValue to disable the global rate
+        // limit; a fractional millisecond must not defer the next message.
+        next = options.TelegramPerSecond == int.MaxValue ? clock.UtcNow :
+            clock.UtcNow.AddMilliseconds(1000d / options.TelegramPerSecond);
         // Channels count towards a more conservative 20 messages/minute.
         chats[destination] = clock.UtcNow.AddMilliseconds(destination < 0 ? options.TelegramChannelMilliseconds : options.TelegramChatMilliseconds);
         if (chats.Count > 2048) foreach (var k in chats.Where(x => x.Value < clock.UtcNow).Select(x => x.Key).ToArray()) chats.Remove(k);
