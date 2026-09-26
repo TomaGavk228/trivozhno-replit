@@ -45,6 +45,7 @@ public sealed class CurrentTurnTests
     {
         await using var r = new TestRig(); await r.Init(); await r.StartChat(); await r.DrainOutbox();
         await r.Text("Моя думка");
+        await r.DrainOutbox(); // Deliver the one-time AI notice before the reply.
         r.Ai.Pause = new(TaskCreationOptions.RunContinuationsAsynchronously);
         r.Ai.Pause.SetResult(new("Перша завершена думка тут.\n\nДруга завершена думка тут.", "fake", 30));
         Assert.True(await r.Processor.Step(default));
