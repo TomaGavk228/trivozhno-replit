@@ -175,6 +175,9 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
                     b.Property<bool>("QueueNoticeShown")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTimeOffset?>("ReadyAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<long?>("ReplyToId")
                         .HasColumnType("bigint");
 
@@ -195,6 +198,15 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Text")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long>("TurnRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("TurnStartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TurnText")
                         .HasColumnType("text");
 
                     b.Property<long?>("UpdateId")
@@ -229,6 +241,9 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
 
                     b.Property<bool>("HasAnswer")
                         .HasColumnType("boolean");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
 
                     b.Property<DateTimeOffset>("StartedAt")
                         .HasColumnType("timestamp with time zone");
@@ -501,6 +516,9 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
                     b.Property<int>("Attempts")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("Burst")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTimeOffset>("AvailableAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -532,6 +550,9 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
                     b.Property<long?>("ReminderVersion")
                         .HasColumnType("bigint");
 
+                    b.Property<long?>("ReplyToId")
+                        .HasColumnType("bigint");
+
                     b.Property<Guid?>("SessionId")
                         .HasColumnType("uuid");
 
@@ -545,6 +566,9 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
                     b.Property<string>("Text")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<long?>("TurnRevision")
+                        .HasColumnType("bigint");
 
                     b.Property<Guid?>("UserId")
                         .HasColumnType("uuid");

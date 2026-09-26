@@ -79,7 +79,7 @@ public sealed class ConversationMemory(
             .ThenBy(x => x.Role == "assistant" ? 1 : 0)
             .ToList();
 
-        var userMessage = new AiMessage("user", current.Text);
+        var userMessage = new AiMessage("user", current.TurnText ?? current.Text);
         var core = new AiMessage("system", uk.ChatPrompt);
         if (TokenEstimate.Count([core, userMessage]) > budget)
             throw new ContextTooLargeException();
@@ -89,7 +89,7 @@ public sealed class ConversationMemory(
         var groups = previous.GroupBy(x => x.ReplyToId ?? x.Id)
             .OrderByDescending(x => x.Key)
             .Select(x => x.OrderBy(m => m.Role == "assistant" ? 1 : 0)
-                .Select(m => new AiMessage(m.Role, m.Text)).ToList())
+                .Select(m => new AiMessage(m.Role, m.Role == "user" ? m.TurnText ?? m.Text : m.Text)).ToList())
             .Where(x => x.Count > 0 && x[0].Role == "user")
             .ToList();
         var history = new List<AiMessage>();
@@ -196,10 +196,10 @@ public sealed class ConversationMemory(
         log.LogInformation("Chat context {Operation}; current chars {Chars}; history items {HistoryItems}; " +
             "history loaded {Loaded}; system blocks {SystemBlocks}; style profile {HasStyle}; " +
             "summary present {HasSummary}; mood included {HasMood}; current preserved {CurrentPreserved}",
-            current.Id, current.Text.Length, history.Count, previous.Count,
+            current.Id, userMessage.Content.Length, history.Count, previous.Count,
             messages.Count(m => m.Role == "system"), style.Length > 0,
             summary is not null && summary.Text.Length > 0, hasMood,
-            messages[^1].Role == "user" && string.Equals(messages[^1].Content, current.Text, StringComparison.Ordinal));
+            messages[^1].Role == "user" && string.Equals(messages[^1].Content, userMessage.Content, StringComparison.Ordinal));
         return new(messages, hasMood) { Examples = exampleMessages };
 
         bool CanAdd(AiMessage message) =>
@@ -390,7 +390,7 @@ public sealed class ConversationMemory(
 
         foreach (var fact in facts)
         {
-            var msg = new AiMessage("user", $"{fact.CreatedAt:u}: {fact.Text}");
+            var msg = new AiMessage("user", $"{fact.CreatedAt:u}: {fact.TurnText ?? fact.Text}");
             if (TokenEstimate.Count(messages.Append(msg)) + 1000 >
                 Math.Min(3500, Math.Min(options.TokensPerMinute, options.TokensPerDay))) break;
             messages.Add(msg);

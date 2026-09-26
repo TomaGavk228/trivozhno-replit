@@ -17,16 +17,21 @@ public sealed class Ui(BotDb db, Uk uk, IClock clock, BotOptions options)
     public string InlineText(BotUser u, params (string code, string text)[] rows) => JsonSerializer.Serialize(new
     { inline_keyboard = rows.Select(r => new[] { new { text = r.text, callback_data = $"{r.code}|{u.UiToken}" } }) });
     public void Say(BotUser u, string key, string? markup = null) => Text(u, uk[key], markup);
-    public void Text(BotUser u, string text, string? markup = null, string kind = "ui", Guid? sessionId = null, long? memoryVersion = null, long? reminderVersion = null) =>
-        Enqueue(u.Id, u.TelegramId, text, markup, kind, sessionId, memoryVersion, reminderVersion);
+    public void Text(BotUser u, string text, string? markup = null, string kind = "ui", Guid? sessionId = null, long? memoryVersion = null, long? reminderVersion = null,
+        long? turnRevision = null, long? replyToId = null) =>
+        Enqueue(u.Id, u.TelegramId, text, markup, kind, sessionId, memoryVersion, reminderVersion,
+            turnRevision: turnRevision, replyToId: replyToId);
     public void Enqueue(Guid? user, long destination, string text, string? markup = null, string kind = "ui", Guid? sessionId = null,
-        long? memoryVersion = null, long? reminderVersion = null, Guid? operation = null)
+        long? memoryVersion = null, long? reminderVersion = null, Guid? operation = null, long? turnRevision = null, long? replyToId = null)
     {
-        var parts = TextSplitter.Split(text); var op = operation ?? Guid.NewGuid();
+        var parts = kind == "ai" ? TextSplitter.SplitChat(text) : TextSplitter.Split(text);
+        var burst = kind == "ai" && TextSplitter.IsChatBurst(text);
+        var op = operation ?? Guid.NewGuid();
         for (var i = 0; i < parts.Count; i++) db.Outbox.Add(new()
         {
             UserId = user, Destination = destination, Text = parts[i], Markup = i == parts.Count - 1 ? markup : null,
             Kind = kind, SessionId = sessionId, MemoryVersion = memoryVersion, ReminderVersion = reminderVersion,
+            TurnRevision = turnRevision, ReplyToId = replyToId, Burst = burst,
             OperationId = op, PartIndex = i, CreatedAt = clock.UtcNow, AvailableAt = clock.UtcNow
         });
     }

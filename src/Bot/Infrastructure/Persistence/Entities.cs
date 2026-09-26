@@ -36,6 +36,7 @@ public sealed class ChatSession : OwnedEntity
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset? EndedAt { get; set; }
     public bool HasAnswer { get; set; }
+    public long Revision { get; set; }
 }
 public sealed class ChatMessage : OwnedEntity
 {
@@ -53,6 +54,11 @@ public sealed class ChatMessage : OwnedEntity
     public bool QueueNoticeShown { get; set; }
     public bool MoodDerived { get; set; }
     public string SourcesJson { get; set; } = "[]";
+    // A Telegram message stays intact in Text; TurnText is the complete user turn.
+    public string? TurnText { get; set; }
+    public DateTimeOffset? TurnStartedAt { get; set; }
+    public DateTimeOffset? ReadyAt { get; set; }
+    public long TurnRevision { get; set; }
 }
 public sealed class ConversationSummary : OwnedEntity
 {
@@ -127,7 +133,10 @@ public sealed class OutboxMessage
     public string Kind { get; set; } = "ui";
     public Guid? SessionId { get; set; }
     public long? MemoryVersion { get; set; }
+    public long? TurnRevision { get; set; }
+    public long? ReplyToId { get; set; }
     public long? ReminderVersion { get; set; }
+    public bool Burst { get; set; }
     public string Status { get; set; } = "queued";
     public long? TelegramMessageId { get; set; }
     public int Attempts { get; set; }

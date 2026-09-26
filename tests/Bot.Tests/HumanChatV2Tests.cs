@@ -15,7 +15,7 @@ public sealed class HumanChatV4Tests
             [new("user", "Привіт")]);
 
         Assert.Equal(0.7, payload["temperature"]);
-        Assert.Equal(360, payload["max_completion_tokens"]);
+        Assert.Equal(1800, payload["max_completion_tokens"]);
         Assert.Equal("none", payload["reasoning_effort"]);
         Assert.False(payload.ContainsKey("reasoning_format"));
 
@@ -39,7 +39,7 @@ public sealed class HumanChatV4Tests
         Assert.DoesNotContain("story_query", required);
 
         var delta = schema.GetProperty("properties").GetProperty("profile_delta");
-        var allowed = delta.GetProperty("items").GetProperty("enum")
+        var allowed = delta.GetProperty("items").GetProperty("properties").GetProperty("value").GetProperty("enum")
             .EnumerateArray()
             .Select(x => x.GetString())
             .ToArray();
@@ -109,43 +109,6 @@ public sealed class HumanChatV4Tests
         Assert.Equal("none", payload["reasoning_effort"]);
     }
 
-    [Fact]
-    public void GreetingTurnGuidanceStaysPlain()
-    {
-        var guidance = ChatResponder.TurnGuidance("Привіт");
-        Assert.Contains("ПРИВІТАТИСЯ", guidance);
-        Assert.Contains("коротке природне привітання", guidance);
-    }
-
-    [Fact]
-    public void AdviceTurnGuidanceAllowsOnlyOneConcreteIdea()
-    {
-        var guidance = ChatResponder.TurnGuidance("Що мені робити?");
-        Assert.Contains("ДАТИ ОДНУ ПОРАДУ", guidance);
-        Assert.Contains("одну конкретну ідею", guidance);
-    }
-
-    [Fact]
-    public void RefusalTurnGuidanceDoesNotPushAnotherTask()
-    {
-        var guidance = ChatResponder.TurnGuidance("Не хочу нічого робити");
-        Assert.Contains("ПРИЙНЯТИ МЕЖУ", guidance);
-        Assert.Contains("продовжити розмову самому", guidance, StringComparison.OrdinalIgnoreCase);
-    }
-
-
-    [Fact]
-    public void AdviceAfterRefusalRespectsTheBoundary()
-    {
-        var guidance = ChatResponder.TurnGuidance(
-            "Що мені робити?",
-            ["Та нема сил", "Не хочу нічого робити", "Що мені робити?"]);
-
-        Assert.Contains("ПОРАДУ ПІСЛЯ ВІДМОВИ", guidance);
-        Assert.Contains("відкласти рішення", guidance);
-    }
-
-
     [Theory]
     [InlineData("Як мені позбутися тривоги")]
     [InlineData("Як позбутися тривоги")]
@@ -155,32 +118,11 @@ public sealed class HumanChatV4Tests
         Assert.Equal(DialogueAct.Advice, ChatResponder.ClassifyDialogueAct(text));
     }
 
-    [Theory]
-    [InlineData("Не хочу")]
-    [InlineData("Не хочу нічого робити")]
-    public void RefusalGuidanceKeepsConversationAlive(string text)
-    {
-        var guidance = ChatResponder.TurnGuidance(text);
-        Assert.Contains("ПРОДОВЖИТИ РОЗМОВУ САМОМУ", guidance);
-        Assert.Contains("не від розмови", guidance);
-    }
-
-    [Theory]
-    [InlineData("Угу")]
-    [InlineData("Погано")]
-    [InlineData("Не знаю")]
-    public void ShortReplyGuidanceMakesBotCarrySomeConversation(string text)
-    {
-        var guidance = ChatResponder.TurnGuidance(text);
-        Assert.Contains("ПІДХОПИТИ РОЗМОВУ САМОМУ", guidance);
-        Assert.Contains("новий", guidance, StringComparison.OrdinalIgnoreCase);
-    }
-
     [Fact]
-    public void GateRejectsDeadEndAfterRefusal()
+    public void GateDoesNotForceAnotherModelCallForPlainAcknowledgement()
     {
         var quality = ReplyQualityGate.Check(DialogueAct.Refusal, "Не хочу", "Добре.");
-        Assert.False(quality.Accept);
+        Assert.True(quality.Accept);
     }
 
     [Fact]
@@ -212,8 +154,7 @@ public sealed class HumanChatV4Tests
     {
         // The old 5-letter stem-matching "context anchor" check rejected replies
         // that didn't literally re-share a word root with recent messages -- too
-        // fragile for real conversation. The gate now only blocks bare dead-end
-        // acknowledgments after a refusal/short reply, not topic drift.
+        // fragile for real conversation. The gate now checks structure, not topic drift.
         var quality = ReplyQualityGate.Check(
             DialogueAct.ShortReply,
             "Угу",

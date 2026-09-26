@@ -40,7 +40,12 @@ public sealed class OutboxProcessor(IServiceScopeFactory scopes, UserLocks locks
         if (current is null) return true;
         var u = item.UserId is { } userId ? await db.Users.SingleOrDefaultAsync(x => x.Id == userId, ct) : null;
         var valid = item.UserId is null || u is not null && !u.Blocked;
-        if (current.Kind == "ai") valid &= u is not null && u.SessionId == current.SessionId && u.MemoryVersion == current.MemoryVersion;
+        if (current.Kind == "ai")
+        {
+            var revision = await db.Sessions.Where(x => x.Id == current.SessionId).Select(x => (long?)x.Revision).SingleOrDefaultAsync(ct);
+            valid &= u is not null && u.SessionId == current.SessionId && u.MemoryVersion == current.MemoryVersion &&
+                (current.TurnRevision is null || revision == current.TurnRevision);
+        }
         if (current.Kind == "reminder") valid &= u?.State == UserState.MainMenu && await db.Reminders.AnyAsync(x => x.UserId == u.Id && x.Enabled && x.Version == current.ReminderVersion, ct);
         if (!valid)
         { current.Status = "cancelled"; Scrub(current); await db.SaveChangesAsync(ct); return true; }
@@ -49,12 +54,22 @@ public sealed class OutboxProcessor(IServiceScopeFactory scopes, UserLocks locks
         try
         {
             current.TelegramMessageId = await scope.ServiceProvider.GetRequiredService<ITelegramClient>().Send(destination, current.Text, current.Markup, ct);
-            current.Status = "sent"; Scrub(current);
-            if (u is not null && current.Kind == "ai" && !await db.Outbox.AnyAsync(x => x.OperationId == current.OperationId && x.Id != current.Id && x.Status != "sent", ct))
+            if (u is not null && current.Kind == "ai")
             {
+                if (current.ReplyToId is { } replyTo)
+                {
+                    var answer = await db.Messages.SingleOrDefaultAsync(x => x.ReplyToId == replyTo && x.Role == "assistant", ct);
+                    if (answer is not null)
+                    {
+                        answer.Text = answer.Status == "pending_delivery" ? current.Text :
+                            answer.Text + (current.Burst ? "\n\n" : "") + current.Text;
+                        answer.Status = "done";
+                    }
+                }
                 var session = await db.Sessions.SingleOrDefaultAsync(x => x.Id == current.SessionId, ct);
                 if (session is not null) session.HasAnswer = true;
             }
+            current.Status = "sent"; Scrub(current);
             if (u is not null && current.Kind == "reminder")
                 await db.Occurrences.Where(x => x.UserId == u.Id && x.Version == current.ReminderVersion && x.Status == "queued").ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "sent"), ct);
         }

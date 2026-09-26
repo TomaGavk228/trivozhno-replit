@@ -22,19 +22,18 @@ public sealed class BehaviorTests
         Assert.Equal("Текст чернетки", await r.Read(db => db.DraftParts.Select(x => x.Text).SingleAsync()));
     }
     [PostgresFact]
-    public async Task RapidMessagesAreAnsweredInOrderWithPreviousAnswerAndNoCrossUserContext()
+    public async Task RapidMessagesMakeOneCurrentTurnWithNoCrossUserContext()
     {
         await using var r = new TestRig(); await r.Init(); await r.StartChat(); await r.StartChat(2);
         await r.Text("Перша думка"); await r.Text("Друга думка"); await r.Text("Інша людина", 2);
-        Assert.True(await r.Processor.Step(default)); Assert.True(await r.Processor.Step(default)); Assert.True(await r.Processor.Step(default));
+        Assert.True(await r.Processor.Step(default)); Assert.True(await r.Processor.Step(default)); Assert.False(await r.Processor.Step(default));
         var requests = r.Ai.Requests.ToArray();
-        Assert.Equal("Перша думка", requests[0].Last().Content);
-        Assert.Equal("Друга думка", requests[1].Last().Content);
-        Assert.Contains(requests[1], x => x.Role == "assistant" && x.Content == "Відповідь: Перша думка");
-        Assert.DoesNotContain(requests[2], x => x.Content.Contains("Перша думка"));
+        Assert.Equal("Перша думка\nДруга думка", requests[0].Last().Content);
+        Assert.Equal("Інша людина", requests[1].Last().Content);
+        Assert.DoesNotContain(requests[1], x => x.Content.Contains("Перша думка"));
         await r.DrainOutbox();
         var answers = r.Telegram.Sent.Where(x => x.Destination == 1 && x.Text.StartsWith("Відповідь:")).ToArray();
-        Assert.Equal(2, answers.Length); Assert.All(answers, x => { Assert.DoesNotContain("inline_keyboard", x.Markup ?? ""); Assert.Contains("Завершити чат", x.Markup is null ? "" : System.Text.Json.JsonDocument.Parse(x.Markup).RootElement.GetProperty("keyboard")[0][0].GetProperty("text").GetString()); });
+        Assert.Single(answers); Assert.All(answers, x => { Assert.DoesNotContain("inline_keyboard", x.Markup ?? ""); Assert.Contains("Завершити чат", x.Markup is null ? "" : System.Text.Json.JsonDocument.Parse(x.Markup).RootElement.GetProperty("keyboard")[0][0].GetProperty("text").GetString()); });
     }
     [PostgresFact]
     public async Task ExitKeepsMemoryAndSuppressesLateAnswer()
@@ -182,7 +181,7 @@ public sealed class BehaviorTests
     public async Task SummaryFailureKeepsMessagesAndSuccessfulSummaryRetainsRecentTwelve()
     {
         await using var r = new TestRig(); await r.Init(); await r.StartChat();
-        for (var i = 0; i < 18; i++) { await r.Text("Думка " + i); await r.Processor.Step(default); }
+        for (var i = 0; i < 18; i++) { await r.Text("Думка " + i); await r.Processor.Step(default); await r.DrainOutbox(); }
         var u = await r.User(); r.Ai.Fail = true;
         using (var s = r.Services.CreateScope()) await Assert.ThrowsAsync<AiUnavailableException>(() => s.ServiceProvider.GetRequiredService<IConversationMemory>().Summarize(u.Id, u.MemoryVersion, default));
         Assert.Equal(36, await r.Read(db => db.Messages.CountAsync()));

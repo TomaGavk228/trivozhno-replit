@@ -2,7 +2,7 @@ name: Human Chat Tests
 
 on:
   push:
-    branches: [human-chat-v3-research]
+    branches: [human-chat-v3-research, feat/current-turn-chat]
   pull_request:
     branches: [main]
 

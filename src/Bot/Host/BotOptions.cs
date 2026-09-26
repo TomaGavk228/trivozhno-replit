@@ -23,6 +23,8 @@ public sealed class BotOptions
     public int TurnOutputBudget { get; init; } = 1000;
     public int MaxQueue { get; init; } = 10000;
     public int MaxUserAiQueue { get; init; } = 20;
+    public int ChatQuietMilliseconds { get; init; } = 1200;
+    public int ChatGatherMilliseconds { get; init; } = 3000;
     public int TelegramPerSecond { get; init; } = 20;
     public int TelegramChatMilliseconds { get; init; } = 1100;
     public int TelegramChannelMilliseconds { get; init; } = 3100;
@@ -47,6 +49,8 @@ public sealed class BotOptions
         TurnOutputBudget = Int(c, "AI_TURN_OUTPUT_TOKEN_BUDGET", 1000, 500, 4000),
         MaxQueue = Int(c, "MAX_INBOX_QUEUE", 10000, 100, 100000),
         MaxUserAiQueue = Int(c, "MAX_USER_AI_QUEUE", 20, 1, 100),
+        ChatQuietMilliseconds = Int(c, "CHAT_QUIET_MS", 1200, 300, 3000),
+        ChatGatherMilliseconds = Int(c, "CHAT_MAX_GATHER_MS", 3000, 1200, 10000),
         ChunkSize = Int(c, "BOOK_CHUNK_CHARS", 1800, 1200, 2200), ChunkOverlap = Int(c, "BOOK_CHUNK_OVERLAP", 180, 0, 300),
         Timezone = c["BOT_TIMEZONE"] ?? "Europe/Kyiv", Conversation = Flag(c, "FEATURE_CONVERSATION"),
         Confessions = Flag(c, "FEATURE_CONFESSIONS"), Mood = Flag(c, "FEATURE_MOOD"), Reminders = Flag(c, "FEATURE_REMINDERS")
