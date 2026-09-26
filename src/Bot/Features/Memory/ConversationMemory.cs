@@ -117,11 +117,8 @@ public sealed class ConversationMemory(
             nextGroup++;
         }
 
-        // Reserve examples separately from real history and retrieval data.
-        // Recent real exchanges were reserved first and cannot be displaced by samples.
-        // Disable few-shot demonstrations for the clean live-chat baseline.
-        // Tag matching is too coarse for ordinary words such as "день", "думки" and
-        // "не хочу", which was injecting unrelated examples and steering the reply.
+        // Real exchanges take priority. Demonstrations are a separate system
+        // reference block and never become fake user messages in live history.
         IReadOnlyList<AiMessage> exampleMessages = [];
 
         var priorAssistant = previous.LastOrDefault(x => x.Role == "assistant");
@@ -179,6 +176,13 @@ public sealed class ConversationMemory(
                     hasMood = true;
                 }
             }
+        }
+
+        var sampleRoom = budget - TokenEstimate.Count(messages.Concat(history).Append(userMessage));
+        if (sampleRoom > 160)
+        {
+            var primer = demonstrations.Build(Math.Min(980, sampleRoom));
+            if (primer.Length > 0) TryAdd(new AiMessage("system", primer));
         }
 
         // Use remaining space for older complete exchanges, keeping a contiguous suffix.
