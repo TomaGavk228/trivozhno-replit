@@ -61,4 +61,7 @@ public sealed class DialogueExamples
             digest, string.Join(',', included), tokenBudget, included.Count == 0 ? 0 : TokenEstimate.Count(text.ToString()));
         return included.Count == 0 ? "" : text.ToString();
     }
+
+    // Archive access for local copy telemetry only; never injected into chat.
+    public IReadOnlyList<DialogueExample> Snapshot() => file.Read();
 }

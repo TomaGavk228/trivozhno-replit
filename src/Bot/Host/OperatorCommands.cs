@@ -52,6 +52,18 @@ public static class OperatorCommands
                 return partial ? 2 : 0;
             case "list-books":
                 Console.WriteLine(JsonSerializer.Serialize(await db.Sources.Select(x => new { x.Id, x.Title, x.Hash, x.Active, Chunks = db.Chunks.Count(c => c.SourceId == x.Id) }).ToListAsync(ct))); return 0;
+            case "audit-books":
+                // Read-only import quality report. No book text, user data or AI calls.
+                Console.WriteLine(JsonSerializer.Serialize(await db.Sources.AsNoTracking().Select(s => new
+                {
+                    s.Id, s.Title, s.Active, s.ImportVersion,
+                    Chunks = db.Chunks.Count(c => c.SourceId == s.Id),
+                    InvalidPages = db.Chunks.Count(c => c.SourceId == s.Id && (c.PageStart < 1 || c.PageEnd < c.PageStart)),
+                    ShortText = db.Chunks.Count(c => c.SourceId == s.Id && c.Text.Length < 40),
+                    EmptyIndex = db.Chunks.Count(c => c.SourceId == s.Id && c.Terms.Length == 0),
+                    EncodingDamage = db.Chunks.Count(c => c.SourceId == s.Id && c.Text.Contains("\uFFFD")),
+                    MissingTitle = s.Title.Trim() == ""
+                }).ToListAsync(ct))); return 0;
             case "deactivate-book":
                 var source = long.Parse(args[1]);
                 Console.WriteLine(await db.Sources.Where(x => x.Id == source).ExecuteUpdateAsync(x => x.SetProperty(y => y.Active, false), ct)); return 0;
@@ -130,7 +142,7 @@ public static class OperatorCommands
                 var result = await provider.GetRequiredService<IAiClient>().Complete([new("system", "Відповідай українською одним коротким реченням."), new("user", "Привіт!")], false, ct);
                 Console.WriteLine(JsonSerializer.Serialize(new { result.Model, result.Tokens, Answer = result.Text })); return 0;
             default:
-                Console.Error.WriteLine("Commands: serve, migrate, channel-id, delete-webhook, import-books --path DIR, list-books, deactivate-book ID, search-books --query TEXT, inspect-outbox, mark-delivered ID --message-id ID, retry-delivery ID [--accept-duplicate-risk], metrics, groq-smoke --live"); return 2;
+                Console.Error.WriteLine("Commands: serve, migrate, channel-id, delete-webhook, import-books --path DIR, list-books, audit-books, deactivate-book ID, search-books --query TEXT, inspect-outbox, mark-delivered ID --message-id ID, retry-delivery ID [--accept-duplicate-risk], metrics, groq-smoke --live"); return 2;
         }
     }
     private static string? Option(string[] args, string option)

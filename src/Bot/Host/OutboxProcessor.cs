@@ -52,6 +52,11 @@ public sealed class OutboxProcessor(IServiceScopeFactory scopes, UserLocks locks
         if (current.Kind == "reminder") valid &= u?.State == UserState.MainMenu && await db.Reminders.AnyAsync(x => x.UserId == u.Id && x.Enabled && x.Version == current.ReminderVersion, ct);
         if (!valid)
         { current.Status = "cancelled"; Scrub(current); await db.SaveChangesAsync(ct); return true; }
+        // Read timing data before Telegram accepts the send, not between
+        // delivery and saving the delivered state.
+        var input = current.Kind == "ai" ? await db.Messages.AsNoTracking()
+            .Where(x => x.Id == current.ReplyToId)
+            .Select(x => new { x.CreatedAt, x.TurnStartedAt }).SingleOrDefaultAsync(ct) : null;
         current.Status = "sending"; current.Attempts++; await db.SaveChangesAsync(ct);
         rate.Used(destination);
         try
@@ -71,6 +76,12 @@ public sealed class OutboxProcessor(IServiceScopeFactory scopes, UserLocks locks
                 }
                 var session = await db.Sessions.SingleOrDefaultAsync(x => x.Id == current.SessionId, ct);
                 if (session is not null) session.HasAnswer = true;
+                log.LogInformation("AI delivery {Operation}; part {Part}; burst {Burst}; " +
+                    "outbox wait {OutboxMs} ms; since latest input {LatestMs} ms; since turn start {TurnMs} ms",
+                    current.OperationId, current.PartIndex, current.Burst,
+                    (clock.UtcNow - current.CreatedAt).TotalMilliseconds,
+                    input is null ? 0 : (clock.UtcNow - input.CreatedAt).TotalMilliseconds,
+                    input is null ? 0 : (clock.UtcNow - (input.TurnStartedAt ?? input.CreatedAt)).TotalMilliseconds);
             }
             current.Status = "sent"; Scrub(current);
             if (u is not null && current.Kind == "reminder")
