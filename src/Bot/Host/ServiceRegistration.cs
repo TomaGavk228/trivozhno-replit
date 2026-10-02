@@ -27,7 +27,9 @@ public static class ServiceRegistration
         services.AddHttpClient<ITelegramClient, TelegramClient>(c => c.Timeout = TimeSpan.FromSeconds(40)).RemoveAllLoggers();
         services.AddHttpClient<IAiClient, GroqClient>(c => c.Timeout = Timeout.InfiniteTimeSpan).RemoveAllLoggers();
         services.AddScoped<IKnowledgeRetriever, KnowledgeRetriever>(); services.AddScoped<IConversationMemory, ConversationMemory>();
+        services.AddScoped<MemoryRetriever>();
         services.AddSingleton<DialogueExamples>(); services.AddSingleton<MovieCatalog>();
+        services.AddSingleton<ReplyDiagnostics>();
         services.AddScoped<ChatResponder>();
         services.AddScoped<BookImporter>(); services.AddScoped<Ui>(); services.AddScoped<DraftStore>(); services.AddScoped<Router>();
         services.AddScoped<ConversationHandler>(); services.AddScoped<ConfessionHandler>(); services.AddScoped<MoodHandler>();
@@ -36,4 +38,3 @@ public static class ServiceRegistration
         return services;
     }
 }
-

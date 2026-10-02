@@ -25,7 +25,12 @@ public static class TextSplitter
         return IsChatBurst(paragraphs, trimmed.Length);
     }
     private static bool IsChatBurst(string[] paragraphs, int length) =>
-        paragraphs.Length == 2 && paragraphs.All(p => p.Length is >= 12 and <= 240) && length <= 400;
+        paragraphs.Length == 2 && paragraphs.All(p => p.Length is > 0 and <= 240) && length <= 400 &&
+        // A short reaction can be its own bubble; a numbered list or an
+        // unfinished lead-in is a single message, not two conversational turns.
+        !paragraphs[0].EndsWith(':') &&
+        !paragraphs.Any(p => Regex.IsMatch(p, @"^(?:[-*•]|\d+[.)])\s",
+            RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)));
     // Lossless: whitespace belongs to one of the parts; surrogate pairs are never split.
     public static IReadOnlyList<string> Split(string text, int max = 4000)
     {

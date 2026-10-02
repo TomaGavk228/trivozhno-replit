@@ -5,7 +5,11 @@ using Trivozhno.Infrastructure.Persistence;
 namespace Trivozhno.Infrastructure.Knowledge;
 
 public sealed record KnowledgeHit(long ChunkId, string Title, int PageStart, int PageEnd, string Text, double Score);
-public interface IKnowledgeRetriever { Task<IReadOnlyList<KnowledgeHit>> Search(string query, CancellationToken ct); }
+public interface IKnowledgeRetriever
+{
+    Task<IReadOnlyList<KnowledgeHit>> Search(string query, CancellationToken ct);
+    Task<IReadOnlyList<KnowledgeHit>> ReadPassages(IReadOnlyList<long> chunkIds, CancellationToken ct);
+}
 
 public static class Lexicon
 {
@@ -57,7 +61,8 @@ public sealed class KnowledgeRetriever(BotDb db) : IKnowledgeRetriever
     {
         var terms = Lexicon.Terms(query).Distinct().Take(24).ToArray();
         if (terms.Length == 0) return [];
-        var candidates = await db.Chunks.AsNoTracking().Where(x => x.Terms.Any(t => terms.Contains(t)) && db.Sources.Any(s => s.Id == x.SourceId && s.Active))
+        var candidates = await db.Chunks.AsNoTracking().Where(x => x.Text != "" && x.PageStart > 0 && x.PageEnd >= x.PageStart &&
+                x.Terms.Any(t => terms.Contains(t)) && db.Sources.Any(s => s.Id == x.SourceId && s.Active))
             .OrderByDescending(x => x.Terms.Count(t => terms.Contains(t))).ThenBy(x => x.Id).Take(256)
             .Join(db.Sources, x => x.SourceId, s => s.Id, (x, s) => new { Chunk = x, s.Title }).ToListAsync(ct);
         if (candidates.Count == 0) return [];
@@ -82,5 +87,41 @@ public sealed class KnowledgeRetriever(BotDb db) : IKnowledgeRetriever
             chosen.Add(item.Hit); fingerprints.Add(set); if (chosen.Count == 3) break;
         }
         return chosen;
+    }
+
+    public async Task<IReadOnlyList<KnowledgeHit>> ReadPassages(IReadOnlyList<long> chunkIds, CancellationToken ct)
+    {
+        var ids = chunkIds.Where(x => x > 0).Distinct().Take(2).ToArray();
+        if (ids.Length == 0) return [];
+        var anchors = await db.Chunks.AsNoTracking().Where(x => ids.Contains(x.Id) &&
+                x.Text != "" && x.PageStart > 0 && x.PageEnd >= x.PageStart)
+            .Join(db.Sources.Where(s => s.Active), x => x.SourceId, s => s.Id,
+                (x, s) => new { Chunk = x, s.Title }).ToListAsync(ct);
+        var passages = new List<KnowledgeHit>();
+        var covered = new HashSet<long>();
+        foreach (var id in ids)
+        {
+            var anchor = anchors.FirstOrDefault(x => x.Chunk.Id == id);
+            if (anchor is null || covered.Contains(id)) continue;
+            var ordinal = anchor.Chunk.Ordinal;
+            var neighbors = await db.Chunks.AsNoTracking().Where(x => x.SourceId == anchor.Chunk.SourceId &&
+                    x.Ordinal >= ordinal - 1 && x.Ordinal <= ordinal + 1 &&
+                    x.Text != "" && x.PageStart > 0 && x.PageEnd >= x.PageStart)
+                .OrderBy(x => x.Ordinal).ToListAsync(ct);
+            if (neighbors.Count == 0) continue;
+            var text = neighbors[0].Text;
+            foreach (var neighbor in neighbors.Skip(1)) text = JoinOverlapping(text, neighbor.Text);
+            passages.Add(new(id, anchor.Title, neighbors.Min(x => x.PageStart), neighbors.Max(x => x.PageEnd), text, 0));
+            covered.UnionWith(neighbors.Select(x => x.Id));
+        }
+        return passages;
+    }
+
+    private static string JoinOverlapping(string left, string right)
+    {
+        for (var size = Math.Min(600, Math.Min(left.Length, right.Length)); size >= 20; size--)
+            if (left.AsSpan(left.Length - size).SequenceEqual(right.AsSpan(0, size)))
+                return left + right[size..];
+        return left + "\n\n" + right;
     }
 }

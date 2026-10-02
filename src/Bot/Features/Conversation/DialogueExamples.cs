@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Trivozhno.Infrastructure.Content;
 using Trivozhno.Infrastructure.Groq;
 
@@ -19,7 +18,7 @@ public sealed class DialogueExamples
     public DialogueExamples(ILogger<DialogueExamples> log)
     {
         this.log = log;
-        file = new(Path.Combine(AppContext.BaseDirectory, "Resources", "Conversation", "dialogue-examples.json"),
+        file = new(Path.Combine(AppContext.BaseDirectory, "Resources", "Conversation", "character-examples.json"),
             [], Valid, log);
     }
 
@@ -33,72 +32,64 @@ public sealed class DialogueExamples
                 m.Role == (i % 2 == 0 ? "user" : "assistant") &&
                 !string.IsNullOrWhiteSpace(m.Content) && m.Content.Length <= 4000).All(x => x));
 
-    public string Build(int tokenBudget) => Build(tokenBudget, []);
-
     private static IEnumerable<(DialogueExample Example, int Index)> SelectPack(
-        DialogueExample[] examples, IReadOnlyList<AiMessage> conversation)
+        DialogueExample[] examples)
     {
-        var latest = conversation.LastOrDefault(m => m.Role == "user")?.Content ?? "";
-        var recent = conversation.TakeLast(6).Where(m => m.Role == "user")
-            .SkipLast(1).Select(m => m.Content).ToArray();
-        return examples.Select((example, index) => (Example: example, Index: index,
-                Score: (example.Tags ?? []).Sum(tag =>
-                    Matches(latest, tag) ? 10 : recent.Any(m => Matches(m, tag)) ? 1 : 0)))
-            .Where(x => x.Example.Enabled && x.Score > 0)
-            .OrderByDescending(x => x.Score)
-            .ThenByDescending(x => x.Example.Core)
-            .ThenBy(x => x.Index)
-            // Demonstrations are for edge cases, not a permanent voice primer.
-            // One relevant example is enough; ordinary turns get zero.
-            .Take(1)
-            .Select(x => (x.Example, x.Index));
+        // A stable, diverse voice primer. Keyword selection previously treated
+        // ordinary words as triggers and copied unrelated examples into turns.
+        return examples.Select((example, index) => (Example: example, Index: index))
+            .Where(x => x.Example.Enabled && x.Example.Core).Take(4);
     }
 
-    private static bool Matches(string message, string tag) =>
-        Regex.IsMatch(message, @"(?<!\p{L})" + Regex.Escape(tag) + @"(?!\p{L})",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
-
-    public IReadOnlyList<AiMessage> BuildMessages(int tokenBudget, IReadOnlyList<AiMessage> conversation)
+    public string Build(int tokenBudget)
     {
         var examples = file.Read();
-        var messages = new List<AiMessage>();
+        var text = new StringBuilder("ЗРАЗКИ МАНЕРИ. Кожен блок — окрема вигадана розмова. " +
+            "Це не історія поточного користувача. Перенось лише спосіб реагувати, а не події, слова чи особисті факти.\n");
         var included = new List<int>();
-        foreach (var item in SelectPack(examples, conversation))
-        {
-            // Mark every example-user message, including within a multi-turn
-            // episode. Real user text is never prefixed, rewritten or replaced.
-            var block = item.Example.Messages.Select(m => new AiMessage(m.Role,
-                m.Role == "user" ? "[Зразок манери; окрема розмова]\n" + m.Content : m.Content)).ToArray();
-            if (TokenEstimate.Count(messages.Concat(block)) > tokenBudget) continue;
-            messages.AddRange(block);
-            included.Add(item.Index);
-        }
-        var digest = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(examples)))[..12];
-        log.LogInformation("Dialogue examples: mode role-pairs; snapshot {Snapshot}; selected indexes {Indexes}; budget {Budget}; estimated {Tokens}",
-            digest, string.Join(',', included), tokenBudget, TokenEstimate.Count(messages));
-        return messages;
-    }
-
-    public string Build(int tokenBudget, IReadOnlyList<AiMessage> conversation)
-    {
-        var examples = file.Read();
-        // The same relevance rule applies to the legacy text representation.
-        var text = new StringBuilder("Це окремі знеособлені приклади манери переписки, не історія поточного користувача. " +
-            "Перенось ритм і увагу до сказаного. Факти, теми й звертання з прикладів не перенось у справжню розмову.\n");
-        var included = new List<int>();
-        foreach (var item in SelectPack(examples, conversation))
+        foreach (var item in SelectPack(examples))
         {
             var block = "\nОкремий приклад:\n" + string.Join('\n', item.Example.Messages.Select(m =>
                 (m.Role == "user" ? "Людина: " : "Співрозмовник: ") + m.Content)) + "\n";
-            // Keep a prefix of the same pack when space is tight, not a different pack.
             if (TokenEstimate.Count(text.ToString() + block) > tokenBudget) continue;
             text.Append(block);
             included.Add(item.Index);
         }
 
         var digest = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(examples)))[..12];
-        log.LogInformation("Dialogue examples: mode fixed-text; snapshot {Snapshot}; selected indexes {Indexes}; budget {Budget}; estimated {Tokens}",
+        log.LogInformation("Dialogue examples: snapshot {Snapshot}; selected indexes {Indexes}; budget {Budget}; estimated {Tokens}",
             digest, string.Join(',', included), tokenBudget, included.Count == 0 ? 0 : TokenEstimate.Count(text.ToString()));
         return included.Count == 0 ? "" : text.ToString();
     }
+
+    // Real role pairs placed before the live chat: the model imitates manner far better
+    // from turns it can "see" than from an abstract description. Core examples are always
+    // included; examples tagged with the current dialogue act are added next.
+    public IReadOnlyList<AiMessage> Pack(int tokenBudget, DialogueAct act, bool crisis)
+    {
+        if (tokenBudget < 120) return [];
+        var examples = file.Read().Where(e => e.Enabled).ToArray();
+        var wanted = crisis ? "Crisis" : act.ToString();
+        var ordered = examples.Where(e => e.Core && !HasTag(e, "Crisis"))
+            .Concat(examples.Where(e => !e.Core && HasTag(e, wanted)))
+            .Distinct().ToArray();
+        if (crisis) ordered = examples.Where(e => HasTag(e, "Crisis")).Concat(ordered.Take(2)).ToArray();
+        var result = new List<AiMessage>();
+        var used = 0;
+        foreach (var example in ordered.Take(7))
+        {
+            var block = example.Messages.Select(m => new AiMessage(m.Role, m.Content)).ToArray();
+            var cost = TokenEstimate.Count(block);
+            if (used + cost > tokenBudget) continue;
+            result.AddRange(block);
+            used += cost;
+        }
+        return result;
+    }
+
+    private static bool HasTag(DialogueExample e, string tag) =>
+        e.Tags?.Contains(tag, StringComparer.OrdinalIgnoreCase) == true;
+
+    // Archive access for local copy telemetry only; never injected into chat.
+    public IReadOnlyList<DialogueExample> Snapshot() => file.Read();
 }

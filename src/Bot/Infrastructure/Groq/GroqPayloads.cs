@@ -26,7 +26,7 @@ public sealed partial class GroqClient
         {
             ["model"] = model,
             ["messages"] = messages.Select(x => new { role = x.Role, content = x.Content }).ToArray(),
-            ["temperature"] = summary ? 0.15 : 0.72,
+            ["temperature"] = summary ? 0.15 : 0.85,
             ["max_completion_tokens"] = summary ? SummaryCompletionTokens : ChatReplyBudget.Limit(messages, ChatCompletionTokens),
             ["stream"] = false
         };
