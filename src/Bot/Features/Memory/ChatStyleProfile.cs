@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Trivozhno.Features.Memory;
 
 public static class ChatStyleProfile
@@ -15,10 +17,54 @@ public static class ChatStyleProfile
     private static readonly HashSet<string> Allowed =
         Groups.Values.SelectMany(x => x).ToHashSet(StringComparer.Ordinal);
 
+    // Persist only standalone, explicit requests about how to talk. Ordinary
+    // refusals, quoted dialogue and one-off "not now" replies are not a profile.
+    // This deliberately misses ambiguous wording; the model still sees it in chat.
+    public static IReadOnlyList<string> ExplicitDelta(string text)
+    {
+        if (text.Length > 2000 || text.IndexOfAny(['«', '»', '"', '`', '>']) >= 0) return [];
+        var result = new List<string>();
+        foreach (var part in Regex.Split(text, @"[\r\n.!?;]+", RegexOptions.CultureInvariant,
+                     TimeSpan.FromMilliseconds(100)))
+        {
+            var phrase = part.Trim().ToLowerInvariant();
+            if (phrase.Length == 0) continue;
+            var before = result.Count;
+            phrase = Regex.Replace(phrase, @"^(будь ласка[,]?\s+)|(,?\s+будь ласка)$", "",
+                RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+            var ongoing = phrase.StartsWith("надалі ", StringComparison.Ordinal) ||
+                          phrase.StartsWith("завжди ", StringComparison.Ordinal);
+            if (ongoing) phrase = phrase[7..];
+            Add("shorter", @"(пиши|відповідай|говори)\s+(коротше|коротко|стисло)");
+            Add("fuller", @"(пиши|відповідай)\s+(детальніше|докладніше|розгорнутіше)");
+            Add("fewer_questions", @"менше\s+(питань|запитань)|не\s+став\s+стільки\s+(питань|запитань)");
+            Add("more_questions", @"(став|задавай)\s+більше\s+(питань|запитань)");
+            Add("likes_humor", @"(жартуй\s+більше|більше\s+жартуй)");
+            Add("less_humor", @"(жартуй\s+менше|менше\s+жартуй)");
+            Add("casual", @"(спілкуйся|пиши|говори)\s+(простіше|невимушено)|без\s+офіціозу");
+            Add("neutral_tone", @"(спілкуйся|пиши|говори)\s+(нейтрально|без\s+сленгу)");
+            if (ongoing)
+            {
+                Add("ask_before_advice", @"(давай\s+поради\s+лише\s+коли\s+я\s+прошу|питай\s+перед\s+порадами)");
+                Add("direct_advice", @"давай\s+(прямі|конкретні)\s+поради");
+            }
+            // A narrative or an unquoted list of examples is not permission to
+            // extract preferences from just one of its lines.
+            if (result.Count == before) return [];
+
+            void Add(string value, string pattern)
+            {
+                if (Regex.IsMatch(phrase, "^(?:" + pattern + ")$", RegexOptions.CultureInvariant,
+                        TimeSpan.FromMilliseconds(100))) result.Add(value);
+            }
+        }
+        return result;
+    }
+
     public static string Apply(string? current, IEnumerable<string> delta)
     {
         var values = Parse(current).ToHashSet(StringComparer.Ordinal);
-        foreach (var item in delta.Where(Allowed.Contains).Distinct(StringComparer.Ordinal))
+        foreach (var item in delta.Where(Allowed.Contains))
         {
             var group = Groups.First(x => x.Value.Contains(item, StringComparer.Ordinal)).Value;
             values.RemoveWhere(x => group.Contains(x, StringComparer.Ordinal));

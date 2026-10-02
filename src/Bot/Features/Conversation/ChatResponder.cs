@@ -52,8 +52,11 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         if (bookRequest is not null)
         {
             if (bookRequest.SourceQuestion && !bookRequest.ContinueSources)
-                Add("Для попередньої відповіді книжкове посилання не збережене. " +
-                    "Якщо уривок знайдеться зараз, це нова перевірка, а не підтвердження того, звідки була попередня відповідь.");
+                Add("Походження попередньої відповіді не збережене. На пряме запитання про джерело " +
+                    "чесно скажи, що не можеш його підтвердити; не приписуй відповідь випадковій книзі.");
+            if (bookRequest.Alternative)
+                Add("Людина просить інший варіант. Врахуй уже запропоноване; " +
+                    "перефразування тієї самої поради не є іншим варіантом.");
             try
             {
                 IReadOnlyList<KnowledgeHit> passages = [];
@@ -62,26 +65,31 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
                         .Select(s => s.ChunkId).ToArray(), ct);
                 // A source question must not silently substitute a different
                 // book when the original source has been removed/deactivated.
-                if (passages.Count == 0 && !(bookRequest.ContinueSources && bookRequest.SourceQuestion))
+                if (passages.Count == 0 && !bookRequest.SourceQuestion)
                 {
                     var hits = await knowledge.Search(bookRequest.Query, ct);
-                    passages = await knowledge.ReadPassages(hits.Take(2).Select(h => h.ChunkId).ToArray(), ct);
+                    var previousIds = context.PreviousSources.Where(s => s.Type == "book").Select(s => s.ChunkId).ToHashSet();
+                    passages = await knowledge.ReadPassages(hits
+                        .Where(h => !bookRequest.Alternative || !previousIds.Contains(h.ChunkId))
+                        .Take(2).Select(h => h.ChunkId).ToArray(), ct);
                 }
                 var allowance = Math.Min(options.BookContextTokens, Remaining() - 20);
                 var evidence = BookContext.Build(passages, bookRequest.Query, allowance,
                     bookRequest.ContinueSources && bookRequest.SourceQuestion);
                 if (evidence.Sources.Count > 0 && Add(evidence.Instruction)) bookContext = evidence;
-                else Add("Доречного книжкового уривка для цього прохання зараз немає в контексті. " +
-                    "Скажи про це, якщо потрібен метод або джерело; допоможи розібрати відому з розмови ситуацію.");
-                log.LogInformation("Book context; continued {Continued}; candidates {Candidates}; included {Included}; chunks {Chunks}",
-                    bookRequest.ContinueSources, passages.Count, bookContext.Sources.Count,
+                else Add("Матеріалу для конкретного психологічного методу немає в контексті. " +
+                    "Не домислюй метод і його ефект; допоможи з відомою з переписки ситуацією. " +
+                    "Не розповідай про внутрішній пошук. На пряме запитання про походження визнай, якщо його не можеш підтвердити.");
+                log.LogInformation("Book context; continued {Continued}; alternative {Alternative}; candidates {Candidates}; included {Included}; chunks {Chunks}",
+                    bookRequest.ContinueSources, bookRequest.Alternative, passages.Count, bookContext.Sources.Count,
                     string.Join(',', bookContext.Sources.Select(s => s.ChunkId)));
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
                 log.LogWarning("Book lookup unavailable: {Category}", e.GetType().Name);
-                Add("Пошук у книжках зараз недоступний. Чесно познач цю межу, якщо потрібна конкретна техніка; " +
-                    "можна допомогти розібрати ситуацію з переписки.");
+                Add("Довідкові уривки зараз недоступні. Не вигадуй конкретних психологічних методів або їхнього ефекту; " +
+                    "продовжуй із відомої ситуації та прохання людини, без повідомлень про внутрішній пошук. " +
+                    "На пряме запитання про джерело чесно визнай, що його не можеш перевірити.");
             }
         }
         // One conversational generation. Copy/length telemetry does not rewrite

@@ -14,6 +14,7 @@ public sealed record ConversationContext(IReadOnlyList<AiMessage> Messages, bool
 {
     public IReadOnlyList<AiMessage> Examples { get; init; } = [];
     public IReadOnlyList<SourceMetadata> PreviousSources { get; init; } = [];
+    public IReadOnlyList<string> ExplicitStyleDelta { get; init; } = [];
 }
 public sealed record SourceMetadata(
     string Type,
@@ -108,7 +109,8 @@ public sealed class ConversationMemory(
             hasMood |= group.Any(m => m.MoodDerived);
         }
 
-        var style = ChatStyleProfile.Prompt(user.ChatStyleProfile);
+        var styleDelta = ChatStyleProfile.ExplicitDelta(userMessage.Content);
+        var style = ChatStyleProfile.Prompt(ChatStyleProfile.Apply(user.ChatStyleProfile, styleDelta));
         var hasStyle = style.Length > 0 && TryAdd(new("system",
             "Явно висловлені вподобання цієї людини; поточне прохання має перевагу: " + style));
         var memoryRoom = Math.Min(options.MemoryContextTokens, Remaining());
@@ -150,7 +152,7 @@ public sealed class ConversationMemory(
             messages.Count(m => m.Role == "system"), hasStyle, hasSummary,
             memoryIncluded ? memories.Episodes : 0, hasMood, InputLimit - budget,
             messages[^1] == userMessage);
-        return new(messages, hasMood) { PreviousSources = priorSources };
+        return new(messages, hasMood) { PreviousSources = priorSources, ExplicitStyleDelta = styleDelta };
 
         int Remaining() => budget - TokenEstimate.Count(messages.Concat(history).Append(userMessage));
         bool TryAdd(AiMessage message)
@@ -160,7 +162,7 @@ public sealed class ConversationMemory(
             return true;
         }
         static AiMessage ToMessage(ChatMessage m) =>
-            new(m.Role, m.Role == "user" ? m.TurnText ?? m.Text : m.Text);
+            new(m.Role, m.Role == "user" ? m.TurnText ?? m.Text : BookContext.HideInlineCitations(m.Text));
     }
 
     public async Task<ConversationAugmentation> Enrich(

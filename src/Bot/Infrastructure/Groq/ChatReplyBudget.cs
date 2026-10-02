@@ -21,6 +21,11 @@ public static class ChatReplyBudget
     public static int Limit(IReadOnlyList<AiMessage> messages, int configuredMaximum) =>
         WantsDetail(messages) ? configuredMaximum : Math.Min(BriefTokens, configuredMaximum);
 
+    // Hidden reasoning and visible text share the API ceiling. A concise
+    // conversational answer must not leave a reasoning model only 240 tokens.
+    public static int Limit(IReadOnlyList<AiMessage> messages, int configuredMaximum, string? reasoningEffort) =>
+        reasoningEffort is "low" or "medium" or "high" ? configuredMaximum : Limit(messages, configuredMaximum);
+
     public static IReadOnlyList<AiMessage> CompactRetry(IReadOnlyList<AiMessage> messages)
     {
         const string instruction = "Відповідь не вмістилася. Сформулюй її заново: одна головна думка, " +

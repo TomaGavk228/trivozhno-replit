@@ -8,7 +8,7 @@ namespace Trivozhno.Infrastructure.Groq;
 // Structured-turn API retained for existing callers; live chat uses plain Complete.
 public sealed partial class GroqClient
 {
-    private const int ChatCompletionTokens = 1000;
+    private const int ChatCompletionTokens = 1536;
     private const int TurnCompletionTokens = 1800;
     private const int SummaryCompletionTokens = 1000;
     // Account for the JSON schema as well as the message array in local admission.
@@ -19,25 +19,28 @@ public sealed partial class GroqClient
     public static Dictionary<string, object> Payload(
         string model,
         IReadOnlyList<AiMessage> messages,
-        bool summary)
+        bool summary,
+        string? reasoningEffort = null)
     {
         messages = GroqMessageLayout.Prepare(messages);
+        var effort = ResolveReasoningEffort(model, summary, reasoningEffort ?? "low");
         var body = new Dictionary<string, object>
         {
             ["model"] = model,
             ["messages"] = messages.Select(x => new { role = x.Role, content = x.Content }).ToArray(),
             ["temperature"] = summary ? 0.15 : 0.72,
-            ["max_completion_tokens"] = summary ? SummaryCompletionTokens : ChatReplyBudget.Limit(messages, ChatCompletionTokens),
+            ["max_completion_tokens"] = summary ? SummaryCompletionTokens : ChatReplyBudget.Limit(messages, ChatCompletionTokens, effort),
             ["stream"] = false
         };
-        AddReasoning(body, model, structuredTurn: false, summary);
+        AddReasoning(body, model, summary, reasoningEffort);
         return body;
     }
 
     public static Dictionary<string, object> TurnPayload(
         string model,
         IReadOnlyList<AiMessage> messages,
-        int completionTokens = TurnCompletionTokens)
+        int completionTokens = TurnCompletionTokens,
+        string? reasoningEffort = null)
     {
         messages = GroqMessageLayout.Prepare(messages);
         var allowedProfile = ChatStyleProfile.AllowedValues.ToArray();
@@ -107,30 +110,34 @@ public sealed partial class GroqClient
                 json_schema = new { name = "chat_turn", strict = true, schema }
             }
         };
-        AddReasoning(body, model, structuredTurn: true, summary: false);
+        AddReasoning(body, model, summary: false, reasoningEffort);
         return body;
     }
 
     private static void AddReasoning(
         Dictionary<string, object> body,
         string model,
-        bool structuredTurn,
-        bool summary)
+        bool summary,
+        string? reasoningEffort = null)
     {
+        var effort = ResolveReasoningEffort(model, summary, reasoningEffort ?? "low");
         if (model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal))
         {
-            // Live conversation must follow the user's meaning and previous refusals.
-            // Keep summary/legacy costs unchanged; evaluate this setting by manual chat.
-            body["reasoning_effort"] = "low";
+            body["reasoning_effort"] = effort!;
             body["include_reasoning"] = false;
         }
         else if (model.StartsWith("qwen/", StringComparison.Ordinal))
         {
-            // Groq recommends none for efficient general-purpose dialogue.
-            // The chatbot should react naturally, not spend hidden reasoning on "привіт".
-            body["reasoning_effort"] = "none";
+            body["reasoning_effort"] = effort!;
+            body["reasoning_format"] = "hidden";
         }
     }
+
+    internal static string? ResolveReasoningEffort(string model, bool summary, string configured) =>
+        model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal)
+            ? summary || configured == "none" ? "low" : configured
+            : model == "qwen/qwen3.8-27b" ? summary ? "none" : configured
+            : model.StartsWith("qwen/", StringComparison.Ordinal) ? "none" : null;
 
     public static string Clean(string text)
     {

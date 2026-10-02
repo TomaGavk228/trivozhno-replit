@@ -129,6 +129,9 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             if (u is null || current is null || current.Status != "processing" || current.Attempts != leaseAttempt ||
                 session?.Revision != job.TurnRevision || u.SessionId != job.SessionId || u.MemoryVersion != job.MemoryVersion) return true;
 
+            if (context.ExplicitStyleDelta.Count > 0)
+                u.ChatStyleProfile = ChatStyleProfile.Apply(u.ChatStyleProfile, context.ExplicitStyleDelta);
+
             var ui = scope.ServiceProvider.GetRequiredService<Ui>();
             if (result is null || context.HasMood && !u.MoodContextEnabled)
             {

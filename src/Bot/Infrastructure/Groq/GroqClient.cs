@@ -38,10 +38,9 @@ public sealed partial class GroqClient(
         var token = budget.Token;
         var model = forcedModel ?? (summary ? options.SummaryModel : options.Model);
         var briefChat = !summary && !structuredTurn && !ChatReplyBudget.WantsDetail(messages);
-        var completionTokens = summary
-            ? SummaryCompletionTokens
-            : structuredTurn ? options.TurnOutputBudget : ChatReplyBudget.Limit(messages, options.TurnOutputBudget);
+        var completionTokens = 0;
         var lengthRetried = false;
+        var extraCompletionTokens = 0;
 
         var admission = Stopwatch.StartNew();
         using var slot = await quota.Enter(token);
@@ -50,6 +49,12 @@ public sealed partial class GroqClient(
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
             if (!exactModel && attempt == 2) model = options.FallbackModel;
+
+            var effort = ResolveReasoningEffort(model, summary, options.ChatReasoningEffort);
+            var reasoning = effort is "low" or "medium" or "high";
+            completionTokens = summary ? SummaryCompletionTokens : structuredTurn ? options.TurnOutputBudget :
+                ChatReplyBudget.Limit(messages, options.TurnOutputBudget, effort);
+            completionTokens += extraCompletionTokens;
 
             admission.Restart();
             var inputEstimate = TokenEstimate.Count(messages) + (structuredTurn ? TurnSchemaReserve : 0);
@@ -72,8 +77,8 @@ public sealed partial class GroqClient(
                 req.Headers.Authorization =
                     new AuthenticationHeaderValue("Bearer", options.GroqKey);
                 var payload = structuredTurn
-                    ? TurnPayload(model, messages, completionTokens)
-                    : Payload(model, messages, summary);
+                    ? TurnPayload(model, messages, completionTokens, options.ChatReasoningEffort)
+                    : Payload(model, messages, summary, options.ChatReasoningEffort);
                 payload["max_completion_tokens"] = completionTokens;
                 if (forcedTemperature is not null) payload["temperature"] = forcedTemperature.Value;
                 req.Content = JsonContent.Create(payload);
@@ -185,7 +190,7 @@ public sealed partial class GroqClient(
                     ? finish.GetString() : null;
                 if (finishReason == "length")
                 {
-                    if (briefChat && !lengthRetried && attempt < 2)
+                    if (briefChat && !reasoning && !lengthRetried && attempt < 2)
                     {
                         // Retry only an unfinished response, once, with the SAME allowance.
                         // Never turn a short advice request into a larger generation.
@@ -197,13 +202,14 @@ public sealed partial class GroqClient(
                     var room = Math.Min(options.TokensPerMinute, options.TokensPerDay) -
                         TokenEstimate.Count(messages) - (structuredTurn ? TurnSchemaReserve : 0);
                     var larger = Math.Min(3600, Math.Min(room, completionTokens + 1200));
-                    if (!summary && !briefChat && !lengthRetried && attempt < 2 && larger > completionTokens)
+                    if (!summary && (!briefChat || reasoning) && !lengthRetried && attempt < 2 && larger > completionTokens)
                     {
                         // Regenerate from the same conversation, never send partial JSON/text.
                         // Normal successful turns still use a single generation.
                         lengthRetried = true;
-                        completionTokens = larger;
-                        log.LogWarning("Incomplete Groq turn; retrying once with budget {Budget}", larger);
+                        extraCompletionTokens = larger - completionTokens;
+                        if (briefChat) messages = ChatReplyBudget.CompactRetry(messages);
+                        log.LogWarning("Incomplete Groq turn; retrying once with budget {Budget}; reasoning {Reasoning}", larger, effort);
                         continue;
                     }
                     throw new AiUnavailableException("output_truncated");

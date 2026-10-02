@@ -8,7 +8,7 @@ namespace Trivozhno.Infrastructure.Knowledge;
 // It never synthesizes or stitches separate statements into a new claim.
 public static class SourceExcerpt
 {
-    public static string Select(string text, string query, int tokenBudget)
+    public static string Select(string text, string query, int tokenBudget, bool completeSentences = false)
     {
         if (tokenBudget < 30 || string.IsNullOrWhiteSpace(text)) return "";
         if (TokenEstimate.Count(text) <= tokenBudget) return text;
@@ -25,14 +25,18 @@ public static class SourceExcerpt
         var last = center + 1;
         var allowance = tokenBudget - 12;
         if (TokenEstimate.Count(text[boundaries[first]..boundaries[last]]) > allowance)
-            return "…" + ConversationMemory.TrimToTokenBudget(text[boundaries[first]..boundaries[last]], allowance) + "…";
+            return completeSentences ? "" :
+                "…" + ConversationMemory.TrimToTokenBudget(text[boundaries[first]..boundaries[last]], allowance) + "…";
         while (true)
         {
             var grew = false;
-            if (first > 0 && TokenEstimate.Count(text[boundaries[first - 1]..boundaries[last]]) <= allowance)
+            // For books, spend room on following conditions before preamble.
+            if (!completeSentences && first > 0 && TokenEstimate.Count(text[boundaries[first - 1]..boundaries[last]]) <= allowance)
             { first--; grew = true; }
             if (last < boundaries.Count - 1 && TokenEstimate.Count(text[boundaries[first]..boundaries[last + 1]]) <= allowance)
             { last++; grew = true; }
+            if (completeSentences && first > 0 && TokenEstimate.Count(text[boundaries[first - 1]..boundaries[last]]) <= allowance)
+            { first--; grew = true; }
             if (!grew) break;
         }
         return (first > 0 ? "…" : "") + text[boundaries[first]..boundaries[last]].Trim() +
