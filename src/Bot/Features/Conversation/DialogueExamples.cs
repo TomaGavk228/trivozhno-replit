@@ -62,6 +62,34 @@ public sealed class DialogueExamples
         return included.Count == 0 ? "" : text.ToString();
     }
 
+    // Real role pairs placed before the live chat: the model imitates manner far better
+    // from turns it can "see" than from an abstract description. Core examples are always
+    // included; examples tagged with the current dialogue act are added next.
+    public IReadOnlyList<AiMessage> Pack(int tokenBudget, DialogueAct act, bool crisis)
+    {
+        if (tokenBudget < 120) return [];
+        var examples = file.Read().Where(e => e.Enabled).ToArray();
+        var wanted = crisis ? "Crisis" : act.ToString();
+        var ordered = examples.Where(e => e.Core && !HasTag(e, "Crisis"))
+            .Concat(examples.Where(e => !e.Core && HasTag(e, wanted)))
+            .Distinct().ToArray();
+        if (crisis) ordered = examples.Where(e => HasTag(e, "Crisis")).Concat(ordered.Take(2)).ToArray();
+        var result = new List<AiMessage>();
+        var used = 0;
+        foreach (var example in ordered.Take(7))
+        {
+            var block = example.Messages.Select(m => new AiMessage(m.Role, m.Content)).ToArray();
+            var cost = TokenEstimate.Count(block);
+            if (used + cost > tokenBudget) continue;
+            result.AddRange(block);
+            used += cost;
+        }
+        return result;
+    }
+
+    private static bool HasTag(DialogueExample e, string tag) =>
+        e.Tags?.Contains(tag, StringComparer.OrdinalIgnoreCase) == true;
+
     // Archive access for local copy telemetry only; never injected into chat.
     public IReadOnlyList<DialogueExample> Snapshot() => file.Read();
 }

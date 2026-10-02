@@ -9,7 +9,7 @@ using Trivozhno.Resources;
 
 namespace Trivozhno.Features.Memory;
 
-// Legacy Examples stays empty in the live chat; only real history reaches retrieval.
+// Examples are voice-sample role pairs placed before the real chat; never part of retrieval or memory.
 public sealed record ConversationContext(IReadOnlyList<AiMessage> Messages, bool HasMood)
 {
     public IReadOnlyList<AiMessage> Examples { get; init; } = [];
@@ -45,7 +45,8 @@ public sealed class ConversationMemory(
     IClock clock,
     UserLocks locks,
     ILogger<ConversationMemory> log,
-    MemoryRetriever memory) : IConversationMemory
+    MemoryRetriever memory,
+    DialogueExamples? examples = null) : IConversationMemory
 {
     private const int HistoryItems = 24;
 
@@ -77,7 +78,12 @@ public sealed class ConversationMemory(
             priorSources.Any(s => s.Type == "book"), priorSources.Any(s => s.Type != "book")) is not null;
         // Reserve reference room only for advice/source requests. Other chat
         // turns can use the full input allowance for actual conversation.
-        var budget = InputLimit - (needsBooks ? Math.Min(options.BookContextTokens, InputLimit / 3) : 0);
+        var friendSignals = FriendTurn.Analyze(previous.Select(ToMessage).Append(userMessage).ToArray());
+        // Voice examples are real role pairs before the chat; their room is reserved up front.
+        var exampleRoom = examples is null ? 0 : Math.Min(650, InputLimit / 6);
+        var voice = examples?.Pack(exampleRoom, friendSignals.Act, friendSignals.Crisis) ?? [];
+        var voiceTokens = voice.Count == 0 ? 0 : TokenEstimate.Count(voice);
+        var budget = InputLimit - voiceTokens - (needsBooks ? Math.Min(options.BookContextTokens, InputLimit / 3) : 0);
         var core = new AiMessage("system", uk.ChatPrompt);
         if (TokenEstimate.Count([core, userMessage]) > budget) throw new ContextTooLargeException();
         var messages = new List<AiMessage> { core };
@@ -145,12 +151,12 @@ public sealed class ConversationMemory(
         log.LogInformation("Chat context {Operation}; current chars {Chars}; history items {HistoryItems}; " +
             "history loaded {Loaded}; system blocks {SystemBlocks}; style profile {HasStyle}; " +
             "summary present {HasSummary}; memory episodes {Episodes}; mood included {HasMood}; " +
-            "book reserve {BookReserve}; examples 0; current preserved {CurrentPreserved}",
+            "book reserve {BookReserve}; examples {Examples}; current preserved {CurrentPreserved}",
             current.Id, userMessage.Content.Length, history.Count, previous.Count,
             messages.Count(m => m.Role == "system"), hasStyle, hasSummary,
-            memoryIncluded ? memories.Episodes : 0, hasMood, InputLimit - budget,
-            messages[^1] == userMessage);
-        return new(messages, hasMood) { PreviousSources = priorSources };
+            memoryIncluded ? memories.Episodes : 0, hasMood, InputLimit - budget - voiceTokens,
+            voice.Count / 2, messages[^1] == userMessage);
+        return new(messages, hasMood) { PreviousSources = priorSources, Examples = voice };
 
         int Remaining() => budget - TokenEstimate.Count(messages.Concat(history).Append(userMessage));
         bool TryAdd(AiMessage message)

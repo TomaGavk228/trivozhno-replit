@@ -105,7 +105,7 @@ public sealed class HumanChatV4Tests
             false);
 
         Assert.Equal(240, payload["max_completion_tokens"]);
-        Assert.Equal(0.72, payload["temperature"]);
+        Assert.Equal(0.85, payload["temperature"]);
         Assert.Equal("none", payload["reasoning_effort"]);
     }
 

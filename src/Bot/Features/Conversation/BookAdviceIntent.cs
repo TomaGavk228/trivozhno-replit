@@ -10,7 +10,7 @@ public sealed record BookAdviceRequest(string Query, bool ContinueSources, bool 
 // diagnose a person, or change the bot's conversational character.
 public static class BookAdviceIntent
 {
-    private const string AdvicePattern = @"\b(що|шо)\s+(мені\s+)?робити|\bяк\s+(мені\s+)?(це\s+зробити|бути|впоратися|впоратись|заспокоїтися|заспокоїтись|позбутися|перестати)|\b(порад\p{L}*|підкаж\p{L}*|помож\p{L}*|допомож\p{L}*)\b|\bє\s+(якийсь\s+)?спосіб|\bможна\s+щось\s+(з|із)\s+цим\s+зробити";
+    private const string AdvicePattern = @"\b(що|шо)\s+(мені\s+)?робити|\bяк\s+(мені\s+)?(це\s+зробити|бути|впоратися|впоратись|заспокоїтися|заспокоїтись|позбутися|перестати)|\b(порад\p{L}*|підкаж\p{L}*)\b|\bє\s+(якийсь\s+)?спосіб|\bможна\s+щось\s+(з|із)\s+цим\s+зробити";
     private static readonly HashSet<string> Topics =
     [
         "тривога", "страх", "самотність", "стосунки", "межі", "самооцінка",
@@ -29,6 +29,7 @@ public static class BookAdviceIntent
         var current = turns[^1];
         if (Matches(current, @"не\s+(радь|пропонуй)|(?:без|не хочу|не треба)\s+(порад|вправ|технік)"))
             return null;
+        var asksTechnique = Matches(current, @"\b(вправ\p{L}*|технік\p{L}*|метод\p{L}*|практик\p{L}*|прийом\p{L}*)\b");
         var asksSource = Matches(current, @"\b(звідки|джерел\p{L}*|книг\p{L}*|сторінк\p{L}*)\b");
         var asksAdvice = Matches(current, AdvicePattern);
         var followup = Matches(current,
@@ -42,7 +43,15 @@ public static class BookAdviceIntent
         asksSource &= explicitBook || hasPreviousBooks || currentTopic || earlier is not null;
         var continueSources = hasPreviousBooks && (asksOriginalSource || followup && !currentTopic && !asksAdvice);
         var continuesAdvice = followup && turns.SkipLast(1).TakeLast(3).Any(t => Matches(t, AdvicePattern));
-        if (!asksSource && !continueSources && (!asksAdvice && !continuesAdvice || !currentTopic && earlier is null))
+        // A friend does not open a book at the first "допоможи": the first ask gets a human answer.
+        // The lookup starts for an explicit technique/source request, a repeated ask, or a follow-up.
+        var repeatedAdvice = asksAdvice && turns.SkipLast(1).TakeLast(4).Any(t => Matches(t, AdvicePattern));
+        var wantsMethod = (asksTechnique || repeatedAdvice || continuesAdvice) && (currentTopic || earlier is not null);
+        // After a refusal of advice nothing is looked up unless the person names a source explicitly.
+        var declined = turns.SkipLast(1).TakeLast(3).Any(t =>
+            Matches(t, @"^(не\s+хочу|нє|ні|не\s+треба|не\s+буду)[!. ,]*$|не\s+(радь|пропонуй)|(?:без|не хочу|не треба)\s+(порад|вправ|технік)"));
+        if (declined && !explicitBook && !asksOriginalSource && !asksTechnique) return null;
+        if (!asksSource && !continueSources && !wantsMethod)
             return null;
         var query = current;
         if (!currentTopic && earlier is not null) query += "\n" + earlier;
