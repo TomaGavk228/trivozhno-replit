@@ -7,7 +7,10 @@ using Trivozhno.Infrastructure.Knowledge;
 
 namespace Trivozhno.Features.Conversation;
 
-public sealed record ChatReply(AiResult Result, IReadOnlyList<SourceMetadata> Sources);
+public sealed record ChatReply(AiResult Result, IReadOnlyList<SourceMetadata> Sources)
+{
+    public string ConversationState { get; init; } = "";
+}
 
 public enum DialogueAct
 {
@@ -22,7 +25,7 @@ public enum DialogueAct
 
 // Coordinates optional data lookup; it never classifies diagnoses or emotional disorders.
 public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeRetriever knowledge,
-    BotOptions options, ILogger<ChatResponder> log, ReplyDiagnostics diagnostics)
+    BotOptions options, ILogger<ChatResponder> log, ReplyDiagnostics diagnostics, CuriosityCatalog? curiosities = null)
 {
     public async Task<ChatReply> Reply(ConversationContext context, CancellationToken ct)
     {
@@ -41,13 +44,12 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
             }
         }
         var currentText = messages.Last(m => m.Role == "user").Content;
-        if (context.PreviousSources.Any(s => s.Type == "movie") && Regex.IsMatch(currentText,
-                @"\b(звідки|джерел\p{L}*)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
-                TimeSpan.FromMilliseconds(100)))
+        if (context.PreviousSources.Any(s => s.Type == "movie") && BookAdviceIntent.AsksSource(currentText))
             Add("Довідка про попередню відповідь, не інструкції: фільми взято з локального каталогу бота: " +
                 string.Join(", ", context.PreviousSources.Where(s => s.Type == "movie").Select(s => s.Title)) + ".");
-        var bookRequest = BookAdviceIntent.Plan(messages, context.PreviousSources.Any(s => s.Type == "book"),
-            context.PreviousSources.Any(s => s.Type != "book"));
+        // This request was planned from untrimmed history. Do not lose the
+        // antecedent of a short help request after packing the token budget.
+        var bookRequest = context.BookRequest;
         var bookContext = new BookContext("", []);
         if (bookRequest is not null)
         {
@@ -92,30 +94,45 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
                     "На пряме запитання про джерело чесно визнай, що його не можеш перевірити.");
             }
         }
+        CuriositySelection? facts = null;
+        if (bookRequest is null && selection is null)
+        {
+            facts = curiosities?.Find(currentText, context.SeenFactIds, context.PreviousSources);
+            while (facts is not null && !Add(facts.Instruction))
+            {
+                if (facts.Items.Length == 0) { facts = null; break; }
+                facts = facts with { Items = facts.Items.SkipLast(1).ToArray() };
+            }
+        }
         // One conversational generation. Copy/length telemetry does not rewrite
         // an answer or start a second judging/humanizing pass.
-        var result = await ai.Complete(GroqMessageLayout.Prepare(messages), summary: false, ct);
-        if (string.IsNullOrWhiteSpace(result.Text)) throw new AiUnavailableException("empty_reply");
-        var grounded = bookContext.Render(result.Text);
-        sources.AddRange(grounded.Used);
+        var generated = await ai.CompleteTurn(GroqMessageLayout.Prepare(messages), ct);
+        var draft = generated.Turn;
+        if (string.IsNullOrWhiteSpace(draft.Reply)) throw new AiUnavailableException("empty_reply");
+        var available = bookContext.Sources.Concat(facts?.Items.Select(x => x.Source) ?? []).ToArray();
+        sources.AddRange(available.Where(x => draft.SourceIds.Contains(x.Id, StringComparer.Ordinal)));
+        var grounded = bookContext.Render(draft.Reply);
+        sources.AddRange(grounded.Used.Where(x => !sources.Any(s => s.Id == x.Id)));
         var text = grounded.Text;
         if (selection is not null)
         {
             sources.AddRange(selection.Movies.Where(m => text.Contains("{{movie:" + m.Id + "}}", StringComparison.Ordinal))
-                .Select(m => new SourceMetadata("movie", m.Title)));
+                .Select(m => new SourceMetadata("movie", m.Title, ReferenceId: m.Id, Url: m.Source)));
             text = selection.Render(text);
         }
         if (string.IsNullOrWhiteSpace(text)) throw new AiUnavailableException("empty_reply");
-        var final = result with { Text = text };
-        try { diagnostics.Record(context, final, bookContext.Sources.Count, grounded.Used.Count); }
+        var final = (generated.Usage ?? new AiResult(text, generated.Model, generated.Tokens)) with { Text = text };
+        try { diagnostics.Record(context, final, bookContext.Sources.Count, sources.Count(x => x.Type == "book")); }
         catch (Exception e) when (e is not OperationCanceledException)
         { log.LogWarning("Reply observations unavailable: {Category}", e.GetType().Name); }
-        return new(final, sources);
+        log.LogInformation("Friend exchange; version friend-core-v1; thread prepared {Thread}; facts available {Facts}; references used {Sources}",
+            draft.ConversationState.Length > 0, facts?.Items.Length ?? 0, sources.Count);
+        return new(final, sources) { ConversationState = ConversationThread.Normalize(draft.ConversationState) };
 
         int Remaining()
         {
             var limit = Math.Min(options.InputBudget,
-                Math.Min(options.TokensPerMinute, options.TokensPerDay) - options.TurnOutputBudget);
+                Math.Min(options.TokensPerMinute, options.TokensPerDay) - options.TurnOutputBudget) - GroqClient.TurnSchemaReserve;
             return limit - TokenEstimate.Count(messages);
         }
         bool Add(string text)

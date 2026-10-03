@@ -29,6 +29,7 @@ public static class ServiceRegistration
         services.AddScoped<IKnowledgeRetriever, KnowledgeRetriever>(); services.AddScoped<IConversationMemory, ConversationMemory>();
         services.AddScoped<MemoryRetriever>();
         services.AddSingleton<DialogueExamples>(); services.AddSingleton<MovieCatalog>();
+        services.AddSingleton<CuriosityCatalog>();
         services.AddSingleton<ReplyDiagnostics>();
         services.AddScoped<ChatResponder>();
         services.AddScoped<BookImporter>(); services.AddScoped<Ui>(); services.AddScoped<DraftStore>(); services.AddScoped<Router>();

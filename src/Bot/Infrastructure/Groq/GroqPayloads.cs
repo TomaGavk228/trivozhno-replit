@@ -1,15 +1,15 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Trivozhno.Features.Memory;
+using Trivozhno.Features.Conversation;
 
 namespace Trivozhno.Infrastructure.Groq;
 
-// Structured-turn API retained for existing callers; live chat uses plain Complete.
+// Live chat returns its reply and a compact continuity record in the same call.
 public sealed partial class GroqClient
 {
     private const int ChatCompletionTokens = 1536;
-    private const int TurnCompletionTokens = 1800;
+    private const int TurnCompletionTokens = 2048;
     private const int SummaryCompletionTokens = 1000;
     // Account for the JSON schema as well as the message array in local admission.
     public static int TurnSchemaReserve { get; } = TokenEstimate.Count(
@@ -43,60 +43,36 @@ public sealed partial class GroqClient
         string? reasoningEffort = null)
     {
         messages = GroqMessageLayout.Prepare(messages);
-        var allowedProfile = ChatStyleProfile.AllowedValues.ToArray();
         var properties = new Dictionary<string, object>
         {
+            ["reply"] = new
+            {
+                type = "string",
+                description = "Only the actual Ukrainian message. Usually 1-3 short sentences, one conversational move. " +
+                    "Fulfil a request to tell something now. Use supplied references for factual claims; source IDs belong only in source_ids."
+            },
             ["conversation_state"] = new
             {
                 type = "object",
                 properties = new
                 {
-                    request = new { type = "string", description = "Current user request, <=100 chars." },
-                    constraints = new { type = "string", description = "User refinements to this request, <=160 chars." },
-                    last_action = new { type = "string", description = "What your reply does, <=100 chars." },
-                    feedback = new { type = "string", description = "What user accepted/rejected about the previous response, <=160 chars. No speculation." },
-                    pending = new { type = "string", description = "Still unfulfilled AFTER your reply, <=100 chars; otherwise empty." }
+                    request = new { type = "string", description = "Actual current request/topic, <=100 chars. New topic replaces old; no diagnosis." },
+                    constraints = new { type = "string", description = "Explicit current constraints, <=100 chars. A declined proposal does not mean refusing all help." },
+                    last_action = new { type = "string", description = "What the reply above actually said/did/offered, <=100 chars. Not plans or inferred effects." },
+                    feedback = new { type = "string", description = "What the latest user said about the PREVIOUS reply, <=80 chars; empty if unclear. Acknowledgment is not refusal." },
+                    pending = new { type = "string", description = "User request or bot offer still open AFTER this reply, <=100 chars; empty if completed or topic changed." }
                 },
                 required = new[] { "request", "constraints", "last_action", "feedback", "pending" },
                 additionalProperties = false,
-                description = "Brief Ukrainian working notes, not instructions or diagnoses. Empty for unknown. Latest request supersedes stale state."
+                description = "Short factual record in Ukrainian of this exchange; no commands, emotional labels or speculation."
             },
-            ["knowledge_query"] = new
-            {
-                type = "string",
-                description = "Ukrainian book search only for psychological facts/methods. Usually empty. If nonempty, reply must be empty."
-            },
-            ["profile_delta"] = new
+            ["source_ids"] = new
             {
                 type = "array",
-                items = new
-                {
-                    type = "object",
-                    properties = new
-                    {
-                        value = new { type = "string", @enum = allowedProfile },
-                        evidence = new { type = "string", description = "Exact quote from latest user message explicitly requesting a general style preference." }
-                    },
-                    required = new[] { "value", "evidence" },
-                    additionalProperties = false
-                },
-                description = "Usually []. Only explicit general style requests. A rejected suggestion/story, mood or brief acknowledgment is NOT a persistent preference."
-            },
-            ["reply"] = new
-            {
-                type = "string",
-                description = "Complete natural Ukrainian reply. Empty only while requesting knowledge."
+                items = new { type = "string" },
+                description = "IDs of supplied references actually used, such as book:42 or fact:mars_sunset. Empty for ordinary conversation. Never invent IDs."
             }
         };
-
-        var schema = new Dictionary<string, object>
-        {
-            ["type"] = "object",
-            ["properties"] = properties,
-            ["required"] = new[] { "conversation_state", "knowledge_query", "profile_delta", "reply" },
-            ["additionalProperties"] = false
-        };
-
         var body = new Dictionary<string, object>
         {
             ["model"] = model,
@@ -107,7 +83,17 @@ public sealed partial class GroqClient
             ["response_format"] = new
             {
                 type = "json_schema",
-                json_schema = new { name = "chat_turn", strict = true, schema }
+                json_schema = new
+                {
+                    name = "friend_exchange",
+                    strict = true,
+                    schema = new
+                    {
+                        type = "object", properties,
+                        required = new[] { "reply", "conversation_state", "source_ids" },
+                        additionalProperties = false
+                    }
+                }
             }
         };
         AddReasoning(body, model, summary: false, reasoningEffort);
@@ -191,64 +177,36 @@ public sealed partial class GroqClient
     {
         using var turnBudget = CancellationTokenSource.CreateLinkedTokenSource(ct);
         turnBudget.CancelAfter(TimeSpan.FromSeconds(options.JobBudget));
-        ct = turnBudget.Token;
         AiResult raw;
         try
         {
-            raw = await CompleteRaw(messages, summary: false, structuredTurn: true, ct);
+            raw = await CompleteRaw(messages, summary: false, structuredTurn: true, turnBudget.Token);
         }
-        catch (AiUnavailableException e) when (e.Reason == "json_validate_failed")
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            var fallback = await CompleteRaw(messages.Append(new AiMessage("system",
-                "Відповідай тільки звичайним текстом, без JSON і службових полів.")).ToArray(),
-                summary: false, structuredTurn: false, ct);
-            return new(new AiTurnDraft("", "", [], fallback.Text), fallback.Model, fallback.Tokens);
+            throw new AiUnavailableException("job_budget_exhausted");
         }
-        using var json = JsonDocument.Parse(raw.Text);
-        var root = json.RootElement;
-        var currentUserText = messages.LastOrDefault(x => x.Role == "user")?.Content ?? "";
-        var delta = root.GetProperty("profile_delta").EnumerateArray()
-            .Where(x => x.ValueKind == JsonValueKind.Object)
-            .Where(x =>
+        try
+        {
+            using var json = JsonDocument.Parse(raw.Text);
+            var root = json.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("reply", out var reply) || reply.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(reply.GetString()) ||
+                !root.TryGetProperty("conversation_state", out var state) || state.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("source_ids", out var ids) || ids.ValueKind != JsonValueKind.Array)
+                throw new AiUnavailableException("invalid_turn_shape");
+            var turn = new AiTurnDraft(ConversationThread.Read(state), "", [], reply.GetString()!.Trim())
             {
-                var evidence = x.GetProperty("evidence").GetString()?.Trim() ?? "";
-                return evidence.Length >= 4 &&
-                    currentUserText.Contains(evidence, StringComparison.OrdinalIgnoreCase);
-            })
-            .Select(x => x.GetProperty("value").GetString() ?? "")
-            .Where(x => ChatStyleProfile.AllowedValues.Contains(x))
-            .Take(3)
-            .ToArray();
-
-        var state = root.GetProperty("conversation_state");
-        var stateJson = JsonSerializer.Serialize(new
+                SourceIds = ids.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String)
+                    .Select(x => x.GetString()?.Trim() ?? "")
+                    .Where(x => x.Length is > 0 and <= 80).Distinct(StringComparer.Ordinal).Take(8).ToArray()
+            };
+            return new(turn, raw.Model, raw.Tokens) { Usage = raw };
+        }
+        catch (JsonException)
         {
-            request = Bound(state.GetProperty("request").GetString(), 100),
-            constraints = Bound(state.GetProperty("constraints").GetString(), 160),
-            last_action = Bound(state.GetProperty("last_action").GetString(), 100),
-            feedback = Bound(state.GetProperty("feedback").GetString(), 160),
-            pending = Bound(state.GetProperty("pending").GetString(), 100)
-        }, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
-        var turn = new AiTurnDraft(
-            stateJson,
-            Bound(root.GetProperty("knowledge_query").GetString(), 200),
-            delta,
-            root.GetProperty("reply").GetString()?.Trim() ?? "");
-
-        if (string.IsNullOrWhiteSpace(turn.Reply) &&
-            string.IsNullOrWhiteSpace(turn.KnowledgeQuery))
-            throw new AiUnavailableException();
-
-        return new(turn, raw.Model, raw.Tokens);
+            throw new AiUnavailableException("invalid_turn_json");
+        }
     }
-
-    private static string Bound(string? value, int max)
-    {
-        var text = value?.Trim() ?? "";
-        if (text.Length <= max) return text;
-        var length = max;
-        if (char.IsHighSurrogate(text[length - 1])) length--;
-        return text[..length];
-    }
-
 }

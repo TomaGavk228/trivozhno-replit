@@ -19,6 +19,7 @@ public sealed class Uk
 
         Console.WriteLine(
             $"[PROMPT] File={Path.Combine(root, "Prompts", "chat-v1.txt")} " +
+            "Engine=friend-core-v1 Schema=friend_exchange " +
             $"Chars={ChatPrompt.Length} " +
             $"SHA256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ChatPrompt)))}");
     }

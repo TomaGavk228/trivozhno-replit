@@ -1,4 +1,7 @@
 using System.Text.Json;
+using System.Text;
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Trivozhno.Host;
 using Trivozhno.Features.Conversation;
@@ -15,13 +18,21 @@ public sealed record ConversationContext(IReadOnlyList<AiMessage> Messages, bool
     public IReadOnlyList<AiMessage> Examples { get; init; } = [];
     public IReadOnlyList<SourceMetadata> PreviousSources { get; init; } = [];
     public IReadOnlyList<string> ExplicitStyleDelta { get; init; } = [];
+    public string ConversationState { get; init; } = "";
+    public IReadOnlyList<string> SeenFactIds { get; init; } = [];
+    public BookAdviceRequest? BookRequest { get; init; }
 }
 public sealed record SourceMetadata(
     string Type,
     string Title,
     int PageStart = 0,
     int PageEnd = 0,
-    long ChunkId = 0);
+    long ChunkId = 0,
+    string ReferenceId = "",
+    string Url = "")
+{
+    public string Id => Type == "book" ? "book:" + ChunkId : Type + ":" + ReferenceId;
+}
 public sealed record ConversationAugmentation(
     IReadOnlyList<AiMessage> Messages,
     IReadOnlyList<SourceMetadata> Sources);
@@ -52,7 +63,7 @@ public sealed class ConversationMemory(
 
     private int InputLimit => Math.Min(options.InputBudget,
         Math.Min(options.TokensPerMinute, options.TokensPerDay) -
-        options.TurnOutputBudget);
+        options.TurnOutputBudget) - GroqClient.TurnSchemaReserve;
 
     public async Task<ConversationContext> Build(
         BotUser user,
@@ -73,21 +84,32 @@ public sealed class ConversationMemory(
 
         var userMessage = new AiMessage("user", current.TurnText ?? current.Text);
         var priorAssistant = previous.LastOrDefault(x => x.Role == "assistant");
-        var priorSources = ExtractSources(priorAssistant?.SourcesJson);
-        var needsBooks = BookAdviceIntent.Plan(previous.Select(ToMessage).Append(userMessage).ToArray(),
-            priorSources.Any(s => s.Type == "book"), priorSources.Any(s => s.Type != "book")) is not null;
-        // Reserve reference room only for advice/source requests. Other chat
-        // turns can use the full input allowance for actual conversation.
-        var budget = InputLimit - (needsBooks ? Math.Min(options.BookContextTokens, InputLimit / 3) : 0);
+        var priorSources = ExtractSources(priorAssistant?.SourcesJson, priorAssistant?.Text);
+        var thread = priorAssistant is not null && clock.UtcNow - priorAssistant.CreatedAt < TimeSpan.FromHours(6)
+            ? ConversationThread.Normalize(ExtractConversationState(priorAssistant.SourcesJson, priorAssistant.Text)) : "";
+        var seenFacts = ExtractSeenFacts(priorAssistant?.SourcesJson, priorAssistant?.Text);
+        var bookRequest = BookAdviceIntent.Plan(previous.Select(ToMessage).Append(userMessage).ToArray(),
+            priorSources.Any(s => s.Type == "book"), priorSources.Any(s => s.Type != "book"),
+            ConversationThread.SearchContext(thread));
+        var needsBooks = bookRequest is not null;
+        // Reserve reference room for requested advice or a factual diversion.
+        // Other turns can use the full allowance for actual conversation.
+        var referenceReserve = needsBooks ? Math.Min(options.BookContextTokens, InputLimit / 3) :
+            CuriosityCatalog.WantsReference(userMessage.Content, priorSources.Any(s => s.Type == "fact")) ? 650 : 0;
+        var budget = InputLimit - referenceReserve;
         var core = new AiMessage("system", uk.ChatPrompt);
         if (TokenEstimate.Count([core, userMessage]) > budget) throw new ContextTooLargeException();
         var messages = new List<AiMessage> { core };
+        var threadNote = new AiMessage("system", ConversationThread.Prompt(thread));
+        var hasThread = thread.Length > 0 && TokenEstimate.Count(messages.Append(threadNote).Append(userMessage)) <= budget;
+        if (hasThread) messages.Add(threadNote);
         var groups = previous.GroupBy(x => x.ReplyToId ?? x.Id)
             .OrderByDescending(x => x.Key)
             .Select(x => x.OrderBy(m => m.Role == "assistant" ? 1 : 0).ToList())
             .Where(x => x.Count > 0 && x[0].Role == "user").ToList();
         var history = new List<AiMessage>();
-        var hasMood = false;
+        var hasMood = priorAssistant?.MoodDerived == true &&
+            (hasThread || priorSources.Count > 0 || needsBooks);
         foreach (var group in groups)
         {
             var candidate = group.Select(ToMessage).Concat(history).ToList();
@@ -95,7 +117,7 @@ public sealed class ConversationMemory(
             {
                 if (history.Count == 0)
                 {
-                    var room = budget - TokenEstimate.Count([core, userMessage]);
+                    var room = budget - TokenEstimate.Count(messages.Append(userMessage));
                     var perMessage = room / group.Count - 45;
                     if (perMessage < 80) throw new ContextTooLargeException();
                     history = group.Select(m => new AiMessage(m.Role,
@@ -147,12 +169,16 @@ public sealed class ConversationMemory(
         log.LogInformation("Chat context {Operation}; current chars {Chars}; history items {HistoryItems}; " +
             "history loaded {Loaded}; system blocks {SystemBlocks}; style profile {HasStyle}; " +
             "summary present {HasSummary}; memory episodes {Episodes}; mood included {HasMood}; " +
-            "book reserve {BookReserve}; examples 0; current preserved {CurrentPreserved}",
+            "reference reserve {BookReserve}; thread present {HasThread}; examples 0; current preserved {CurrentPreserved}",
             current.Id, userMessage.Content.Length, history.Count, previous.Count,
             messages.Count(m => m.Role == "system"), hasStyle, hasSummary,
-            memoryIncluded ? memories.Episodes : 0, hasMood, InputLimit - budget,
+            memoryIncluded ? memories.Episodes : 0, hasMood, InputLimit - budget, hasThread,
             messages[^1] == userMessage);
-        return new(messages, hasMood) { PreviousSources = priorSources, ExplicitStyleDelta = styleDelta };
+        return new(messages, hasMood)
+        {
+            PreviousSources = priorSources, ExplicitStyleDelta = styleDelta,
+            ConversationState = thread, SeenFactIds = seenFacts, BookRequest = bookRequest
+        };
 
         int Remaining() => budget - TokenEstimate.Count(messages.Concat(history).Append(userMessage));
         bool TryAdd(AiMessage message)
@@ -242,29 +268,35 @@ public sealed class ConversationMemory(
 
     public static string BuildMetadata(
         string conversationState,
-        IReadOnlyList<SourceMetadata> sources)
+        IReadOnlyList<SourceMetadata> sources,
+        string? expectedReply = null,
+        IReadOnlyList<string>? seenFactIds = null)
         => JsonSerializer.Serialize(new
         {
             conversation_state = conversationState,
+            reply_hash = expectedReply is null ? "" : ReplyHash(expectedReply),
+            seen_fact_ids = (seenFactIds ?? []).Distinct(StringComparer.Ordinal).TakeLast(64),
             sources = sources.Select(x => new
             {
                 type = x.Type,
                 title = x.Title,
                 pageStart = x.PageStart,
                 pageEnd = x.PageEnd,
-                chunkId = x.ChunkId
+                chunkId = x.ChunkId,
+                referenceId = x.ReferenceId,
+                url = x.Url
             })
         });
 
-    public static string ExtractConversationState(string? metadata)
+    public static string ExtractConversationState(string? metadata, string? deliveredReply = null)
     {
         if (string.IsNullOrWhiteSpace(metadata)) return "";
         try
         {
             using var json = JsonDocument.Parse(metadata);
-            return json.RootElement.ValueKind == JsonValueKind.Object &&
+            return json.RootElement.ValueKind == JsonValueKind.Object && MatchesReply(json.RootElement, deliveredReply) &&
                    json.RootElement.TryGetProperty("conversation_state", out var state)
-                ? state.GetString()?.Trim() ?? ""
+                && state.ValueKind == JsonValueKind.String ? state.GetString()?.Trim() ?? ""
                 : "";
         }
         catch (JsonException)
@@ -273,22 +305,49 @@ public sealed class ConversationMemory(
         }
     }
 
-    public static IReadOnlyList<SourceMetadata> ExtractSources(string? metadata)
+    public static IReadOnlyList<SourceMetadata> ExtractSources(string? metadata, string? deliveredReply = null)
     {
         if (string.IsNullOrWhiteSpace(metadata)) return [];
         try
         {
             using var json = JsonDocument.Parse(metadata);
             if (json.RootElement.ValueKind != JsonValueKind.Object ||
+                !MatchesReply(json.RootElement, deliveredReply) ||
                 !json.RootElement.TryGetProperty("sources", out var sources) ||
                 sources.ValueKind != JsonValueKind.Array) return [];
             return JsonSerializer.Deserialize<SourceMetadata[]>(sources.GetRawText(),
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true })?
                 .Where(x => x is not null && !string.IsNullOrWhiteSpace(x.Title) &&
-                    (x.Type == "book" && x.ChunkId > 0 || x.Type == "movie")).Take(5).ToArray() ?? [];
+                    (x.Type == "book" && x.ChunkId > 0 || x.Type == "movie" ||
+                     x.Type == "fact" && x.ReferenceId is { Length: > 0 and <= 64 })).Take(8).ToArray() ?? [];
         }
         catch (JsonException) { return []; }
     }
+
+    public static IReadOnlyList<string> ExtractSeenFacts(string? metadata, string? deliveredReply)
+    {
+        if (string.IsNullOrWhiteSpace(metadata)) return [];
+        try
+        {
+            using var json = JsonDocument.Parse(metadata);
+            var previous = json.RootElement.ValueKind == JsonValueKind.Object &&
+                json.RootElement.TryGetProperty("seen_fact_ids", out var ids) && ids.ValueKind == JsonValueKind.Array
+                ? ids.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String)
+                    .Select(x => x.GetString() ?? "").Where(x => x.Length is > 0 and <= 64).ToArray() : [];
+            return previous.Concat(ExtractSources(metadata, deliveredReply).Where(x => x.Type == "fact")
+                .Select(x => x.ReferenceId)).Distinct(StringComparer.Ordinal).TakeLast(64).ToArray();
+        }
+        catch (JsonException) { return []; }
+    }
+
+    // A burst may be interrupted after its first bubble. Never carry forward
+    // the state/source claims for a whole answer that was only partly delivered.
+    private static bool MatchesReply(JsonElement metadata, string? deliveredReply) => deliveredReply is null ||
+        !metadata.TryGetProperty("reply_hash", out var hash) || hash.ValueKind != JsonValueKind.String ||
+        string.IsNullOrEmpty(hash.GetString()) || hash.GetString() == ReplyHash(deliveredReply);
+
+    private static string ReplyHash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+        Regex.Replace(text, @"\s+", " ", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)).Trim())));
 
     public static string RelevantExcerpt(string text, string query, int limit)
     {

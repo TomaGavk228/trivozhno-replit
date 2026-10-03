@@ -15,8 +15,14 @@ public sealed record AiTurnDraft(
     string ConversationState,
     string KnowledgeQuery,
     IReadOnlyList<string> ProfileDelta,
-    string Reply);
-public sealed record AiTurnResult(AiTurnDraft Turn, string Model, int Tokens);
+    string Reply)
+{
+    public IReadOnlyList<string> SourceIds { get; init; } = [];
+}
+public sealed record AiTurnResult(AiTurnDraft Turn, string Model, int Tokens)
+{
+    public AiResult? Usage { get; init; }
+}
 public interface IAiClient
 {
     Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct);
@@ -52,4 +58,3 @@ public sealed class ApiUsage
     public int CachedTokens { get; set; }
     public bool Summary { get; set; }
 }
-

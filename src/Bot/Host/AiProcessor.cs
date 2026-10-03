@@ -102,7 +102,8 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
                 }
                 var reply = await scope.ServiceProvider.GetRequiredService<ChatResponder>().Reply(context, ct);
                 result = reply.Result;
-                metadata = ConversationMemory.BuildMetadata("", reply.Sources);
+                metadata = ConversationMemory.BuildMetadata(reply.ConversationState, reply.Sources,
+                    reply.Result.Text, context.SeenFactIds);
             }
             catch (ContextTooLargeException)
             {

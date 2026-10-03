@@ -34,7 +34,7 @@ public sealed class ReplyDiagnostics(DialogueExamples examples, ILogger<ReplyDia
         var recentOverlap = grams.Count(previous.Contains);
         log.LogInformation("Reply observations; model {Model}; words {Words}; bubbles {Bubbles}; " +
             "5grams {Grams}; archive overlap {Archive}; recent overlap {Recent}; " +
-            "book passages {Passages}; book citations {Citations}; input tokens {Input}; output tokens {Output}",
+            "book passages {Passages}; book references {Citations}; input tokens {Input}; output tokens {Output}",
             result.Model, words.Length, TextSplitter.SplitChat(result.Text).Count,
             grams.Count, archiveOverlap, recentOverlap, bookPassages, citations,
             result.PromptTokens, result.CompletionTokens);

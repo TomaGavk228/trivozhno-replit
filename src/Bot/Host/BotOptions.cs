@@ -8,8 +8,8 @@ public sealed class BotOptions
     public string TelegramToken { get; init; } = "";
     public string GroqKey { get; init; } = "";
     public long ChannelId { get; init; }
-    public string Model { get; init; } = "qwen/qwen3.8-27b";
-    public string FallbackModel { get; init; } = "openai/gpt-oss-120b";
+    public string Model { get; init; } = "openai/gpt-oss-120b";
+    public string FallbackModel { get; init; } = "qwen/qwen3.8-27b";
     public string SummaryModel { get; init; } = "openai/gpt-oss-20b";
     public string ChatReasoningEffort { get; init; } = "low";
     public int AiConcurrency { get; init; } = 2;
@@ -21,7 +21,7 @@ public sealed class BotOptions
     public int RequestsPerDay { get; init; } = 900;
     public int TokensPerDay { get; init; } = 190000;
     public int InputBudget { get; init; } = 4800;
-    public int TurnOutputBudget { get; init; } = 1536;
+    public int TurnOutputBudget { get; init; } = 2048;
     public int MemoryContextTokens { get; init; } = 700;
     public int BookContextTokens { get; init; } = 850;
     public int MaxQueue { get; init; } = 10000;
@@ -43,8 +43,8 @@ public sealed class BotOptions
     {
         Database = c["DATABASE_URL"] ?? "", TelegramToken = c["TELEGRAM_BOT_TOKEN"] ?? "",
         GroqKey = c["GROQ_API_KEY"] ?? "", ChannelId = long.TryParse(c["CONFESSIONS_CHANNEL_ID"], out var id) ? id : 0,
-        Model = ModelName(c, "GROQ_MODEL", "qwen/qwen3.8-27b"),
-        FallbackModel = ModelName(c, "GROQ_FALLBACK_MODEL", "openai/gpt-oss-120b"),
+        Model = ModelName(c, "GROQ_MODEL", "openai/gpt-oss-120b"),
+        FallbackModel = ModelName(c, "GROQ_FALLBACK_MODEL", "qwen/qwen3.8-27b"),
         SummaryModel = ModelName(c, "GROQ_SUMMARY_MODEL", "openai/gpt-oss-20b"),
         ChatReasoningEffort = ReasoningEffort(c),
         AiConcurrency = Int(c, "AI_MAX_CONCURRENCY", 2, 1, 16), AiTimeout = Int(c, "AI_TIMEOUT_SECONDS", 45, 1, 120),
@@ -52,7 +52,7 @@ public sealed class BotOptions
         RequestsPerMinute = Int(c, "GROQ_RPM", 25, 1, 100000), TokensPerMinute = Int(c, "GROQ_TPM", 8000, 2000, 10000000),
         RequestsPerDay = Int(c, "GROQ_RPD", 900, 1, 10000000), TokensPerDay = Int(c, "GROQ_TPD", 190000, 2000, 100000000),
         InputBudget = Int(c, "AI_INPUT_TOKEN_BUDGET", 4800, 2000, 32000),
-        TurnOutputBudget = Int(c, "AI_TURN_OUTPUT_TOKEN_BUDGET", 1536, 500, 4000),
+        TurnOutputBudget = Int(c, "AI_TURN_OUTPUT_TOKEN_BUDGET", 2048, 500, 4000),
         MemoryContextTokens = Int(c, "AI_MEMORY_CONTEXT_TOKENS", 700, 0, 1500),
         BookContextTokens = Int(c, "AI_BOOK_CONTEXT_TOKENS", 850, 400, 1600),
         MaxQueue = Int(c, "MAX_INBOX_QUEUE", 10000, 100, 100000),
