@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Trivozhno.Infrastructure.SillyTavern;
 
 namespace Trivozhno.Resources;
 
@@ -8,8 +9,8 @@ public sealed class Uk
     private readonly Dictionary<string, string[]> aliases;
     public string ChatPrompt { get; }
     public string SummaryPrompt { get; }
-    public string PlannerPrompt { get; }
     public string OpeningMessage { get; }
+    public TavernConfiguration Tavern { get; }
 
     public Uk()
     {
@@ -17,18 +18,15 @@ public sealed class Uk
         strings = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(Path.Combine(root, "uk.json")))!;
         aliases = JsonSerializer.Deserialize<Dictionary<string, string[]>>(File.ReadAllText(Path.Combine(root, "button-aliases.json")))!;
         var characterPath = Path.Combine(root, "Conversation", "friend-character.json");
-        using var character = JsonDocument.Parse(File.ReadAllText(characterPath));
-        var data = character.RootElement.GetProperty("data");
-        ChatPrompt = string.Join("\n\n", new[] { "description", "personality", "scenario" }
-            .Select(key => data.GetProperty(key).GetString())) + "\n\n" +
-            File.ReadAllText(Path.Combine(root, "Prompts", "chat-v1.txt"));
-        OpeningMessage = data.GetProperty("first_mes").GetString() ?? "";
-        PlannerPrompt = File.ReadAllText(Path.Combine(root, "Prompts", "plan-v1.txt"));
+        Tavern = new(root);
+        ChatPrompt = Tavern.BaseInstruction;
+        OpeningMessage = Tavern.Character.FirstMessage;
         SummaryPrompt = File.ReadAllText(Path.Combine(root, "Prompts", "summary-v1.txt"));
 
         Console.WriteLine(
-            $"[PROMPT] File={Path.Combine(root, "Prompts", "chat-v1.txt")} " +
-            $"Character={characterPath} Engine=friend-dialogue-v2 Schema=friend_exchange " +
+            $"[PROMPT] File={Path.Combine(root, "Conversation", "sillytavern-ua.json")} " +
+            $"Character={characterPath} Engine=sillytavern-ua-v1 Format=text " +
+            $"Upstream=1.19.0 Commit={TavernConfiguration.UpstreamCommit} " +
             $"Chars={ChatPrompt.Length} " +
             $"SHA256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ChatPrompt)))}");
     }

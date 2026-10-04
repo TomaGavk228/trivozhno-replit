@@ -9,6 +9,38 @@ public static class ConversationThread
 {
     private static readonly JsonSerializerOptions Json = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
+    // SillyTavern generates the visible text directly. Persist an observational
+    // record from the actual exchange locally, with no second memory request.
+    // Existing semantic records still deserialize through the same schema.
+    public static string FromExchange(string input, string reply, string previous, string? bookQuery = null,
+        IReadOnlyList<string>? explicitPreferences = null)
+    {
+        var priorRequest = "";
+        var priorConstraints = "";
+        var normalized = Normalize(previous);
+        if (normalized.Length > 0)
+        {
+            using var old = JsonDocument.Parse(normalized);
+            priorRequest = Field(old.RootElement, "request", 100);
+            priorConstraints = Field(old.RootElement, "constraints", 100);
+        }
+        var shortContinuation = input.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length <= 3 &&
+            !input.Contains('?') && ClassifyContinuation(input);
+        var request = bookQuery ?? (shortContinuation && priorRequest.Length > 0 ? priorRequest : input);
+        var constraints = explicitPreferences is { Count: > 0 } ? string.Join("; ", explicitPreferences) : priorConstraints;
+        return Normalize(JsonSerializer.Serialize(new
+        {
+            request = Clip(request, 100), constraints = Clip(constraints, 100), last_action = Clip(reply, 100),
+            feedback = normalized.Length > 0 ? Clip(input, 80) : "", pending = ""
+        }, Json));
+    }
+
+    private static string Clip(string text, int length) => text.Length <= length ? text :
+        text[..(char.IsHighSurrogate(text[length - 1]) ? length - 1 : length)];
+
+    private static bool ClassifyContinuation(string input) => input.Trim().TrimEnd('.', '!', '?', ')')
+        .ToLowerInvariant() is "ага" or "угу" or "так" or "ні" or "не знаю" or "нічого" or "не хочу" or "добре" or "ок";
+
     public static string Read(JsonElement state)
     {
         if (state.ValueKind != JsonValueKind.Object) return "";

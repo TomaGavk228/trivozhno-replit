@@ -7,7 +7,7 @@ namespace Trivozhno.Features.Conversation;
 public sealed record BookAdviceRequest(string Query, bool ContinueSources, bool SourceQuestion,
     bool Alternative = false);
 
-// Lexical fallback when the bounded semantic planner is unavailable. These
+// Local book activation, analogous to a ST lorebook/data-bank extension. These
 // signals request material; they never prescribe an exercise or a reply.
 public static class BookAdviceIntent
 {
@@ -38,7 +38,8 @@ public static class BookAdviceIntent
             @"^(а\s+)?((що|шо)\s+(мені\s+)?робити|допоможи(\s+мені)?|підкажи|порадь|як\s+(мені\s+)?бути)$");
         var agrees = Matches(shortText, @"^(так|ага|угу|давай|добре|ок|хочу|спробуймо)$");
         var previousAssistant = conversation.LastOrDefault(m => m.Role == "assistant")?.Content ?? "";
-        var acceptsOffer = agrees && Matches(previousAssistant, @"\b(хочеш|можу|спробу\p{L}*)\b") &&
+        var acceptsOffer = agrees && previousAssistant.Contains('?') &&
+            Matches(previousAssistant, @"\b(хочеш|можу|спробуємо)\b") &&
             (hasPreviousBooks || Matches(previousAssistant, @"\b(вправ\p{L}*|технік\p{L}*|спосіб|метод\p{L}*|заспокої\p{L}*)\b"));
 
         // Query the full recent exchange, before context packing. Unfamiliar
@@ -52,7 +53,7 @@ public static class BookAdviceIntent
             return null;
         var asksSource = asksOriginalSource && (explicitBook || hasPreviousBooks || currentTopic || earlier is not null);
         var continueSources = hasPreviousBooks && !alternative &&
-            (asksSource || acceptsOffer || agrees || followup && !currentTopic && !asksAdvice);
+            (asksSource || acceptsOffer || followup && !currentTopic && !asksAdvice);
         var contextualRequest = earlier is not null && (genericHelp || followup || alternative || acceptsOffer);
         if (!asksSource && !continueSources && !(currentTopic && (asksAdvice || followup)) && !contextualRequest)
             return null;
@@ -61,21 +62,6 @@ public static class BookAdviceIntent
         // Preserve the latest request at the front; old context is optional.
         if (query.Length > 900) query = query[..900];
         return new(query, continueSources, asksSource, alternative);
-    }
-
-    public static BookAdviceRequest? FromPlan(AiTurnPlan plan, string current,
-        bool hasPreviousBooks, bool hasPreviousOtherSources, BookAdviceRequest? fallback)
-    {
-        // Explicit provenance questions always refer to the delivered reply;
-        // a planner may not substitute a newly retrieved book for it.
-        if (AsksSource(current)) return fallback;
-        // A successful semantic decision can decline retrieval for a joke or
-        // casual mention of anxiety. The lexical route is only a fallback.
-        if (plan.BookMode == "none") return null;
-        if (plan.BookMode == "source" && hasPreviousOtherSources && !hasPreviousBooks) return null;
-        var query = string.IsNullOrWhiteSpace(plan.BookQuery) ? fallback?.Query ?? current : plan.BookQuery;
-        return new(query, hasPreviousBooks && (plan.BookMode is "continue" or "source"),
-            plan.BookMode == "source", plan.BookMode == "alternative");
     }
 
     private static bool HasTopic(string text) => Lexicon.Terms(text).Any(Lexicon.IsSupportTopic);

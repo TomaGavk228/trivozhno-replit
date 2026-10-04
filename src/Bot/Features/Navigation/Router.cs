@@ -7,6 +7,7 @@ using Trivozhno.Features.Settings;
 using Trivozhno.Host;
 using Trivozhno.Infrastructure.Persistence;
 using Trivozhno.Infrastructure.Telegram;
+using Trivozhno.Infrastructure.SillyTavern;
 using Trivozhno.Resources;
 
 namespace Trivozhno.Features.Navigation;
@@ -18,6 +19,12 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
     public async Task Handle(BotInput input, CancellationToken ct)
     {
         var command = input.Text?.Split(' ', 2)[0].Split('@', 2)[0];
+        if (command == "/source")
+        {
+            ui.Enqueue(null, input.TelegramId,
+                "Вихідний код цієї версії та ліцензія:\n" + TavernConfiguration.SourceUrl);
+            return;
+        }
         var u = await db.Users.SingleOrDefaultAsync(x => x.TelegramId == input.TelegramId, ct);
         if (u is null)
         {

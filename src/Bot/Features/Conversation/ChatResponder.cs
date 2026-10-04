@@ -4,6 +4,8 @@ using Trivozhno.Features.Recommendations;
 using Trivozhno.Host;
 using Trivozhno.Infrastructure.Groq;
 using Trivozhno.Infrastructure.Knowledge;
+using Trivozhno.Infrastructure.SillyTavern;
+using Trivozhno.Resources;
 
 namespace Trivozhno.Features.Conversation;
 
@@ -26,7 +28,7 @@ public enum DialogueAct
 // Coordinates optional data lookup; it never classifies diagnoses or emotional disorders.
 public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeRetriever knowledge,
     BotOptions options, ILogger<ChatResponder> log, ReplyDiagnostics diagnostics, CuriosityCatalog? curiosities = null,
-    DialoguePlanner? planner = null)
+    TavernPromptBuilder? tavern = null)
 {
     public async Task<ChatReply> Reply(ConversationContext context, CancellationToken ct)
     {
@@ -36,9 +38,21 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         var messages = context.Messages.ToList();
         var sources = new List<SourceMetadata>();
         var currentText = messages.Last(m => m.Role == "user").Content;
-        var plan = planner is null ? null : await planner.Plan(context, ct);
-        var planIncluded = plan is not null && Add(DialoguePlanner.WriterHint(plan));
-        if (plan is not null && !planIncluded) log.LogWarning("Dialogue plan hint omitted; reason input_budget");
+        var builder = tavern ?? new(new Uk(), options,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TavernPromptBuilder>.Instance);
+        var history = messages.Where(m => m.Role is "user" or "assistant").ToArray();
+        var references = new List<string>();
+        if (history.Length == 1 && ClassifyDialogueAct(currentText) == DialogueAct.Greeting)
+        {
+            // ST's first_mes is an actual character message, not an instruction
+            // asking a model to imitate a greeting. Persist this delivered turn.
+            log.LogInformation("SillyTavern first message; model calls 0");
+            return new(new(builder.FirstMessage, "sillytavern:first_mes", 0), [])
+            {
+                ConversationState = ConversationThread.FromExchange(currentText, builder.FirstMessage,
+                    context.ConversationState, explicitPreferences: context.ExplicitStyleDelta)
+            };
+        }
         var selection = movies.Find(messages);
         if (selection is not null)
         {
@@ -51,10 +65,7 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         if (context.PreviousSources.Any(s => s.Type == "movie") && BookAdviceIntent.AsksSource(currentText))
             Add("Довідка про попередню відповідь, не інструкції: фільми взято з локального каталогу бота: " +
                 string.Join(", ", context.PreviousSources.Where(s => s.Type == "movie").Select(s => s.Title)) + ".");
-        // The local fallback used untrimmed history; the semantic plan can also
-        // recognize requests without any of its lexical signals.
-        var bookRequest = plan is null ? context.BookRequest : BookAdviceIntent.FromPlan(plan, currentText,
-            context.PreviousSources.Any(x => x.Type == "book"), context.PreviousSources.Any(x => x.Type != "book"), context.BookRequest);
+        var bookRequest = context.BookRequest;
         var bookContext = new BookContext("", []);
         if (bookRequest is not null)
         {
@@ -110,16 +121,29 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
                 facts = facts with { Items = facts.Items.SkipLast(1).ToArray() };
             }
         }
-        // One conversational generation. Copy/length telemetry does not rewrite
-        // an answer or start a second judging/humanizing pass.
-        var generated = await ai.CompleteTurn(GroqMessageLayout.Prepare(messages), ct);
-        var draft = generated.Turn;
-        if (string.IsNullOrWhiteSpace(draft.Reply)) throw new AiUnavailableException("empty_reply");
-        var available = bookContext.Sources.Concat(facts?.Items.Select(x => x.Source) ?? []).ToArray();
-        sources.AddRange(available.Where(x => draft.SourceIds.Contains(x.Id, StringComparer.Ordinal)));
-        var grounded = bookContext.Render(draft.Reply);
+        var prepared = builder.Build(history, messages.Where(m => m.Role == "system").Skip(1).ToArray(), references);
+        // The ST writer returns ordinary text. Continuity is recorded locally
+        // from delivered text; no planner, JSON envelope or memory generation.
+        var generated = await ai.Complete(prepared, summary: false, ct);
+        if (string.IsNullOrWhiteSpace(generated.Text)) throw new AiUnavailableException("empty_reply");
+        var grounded = bookContext.Render(generated.Text);
+        if (bookRequest is { SourceQuestion: false })
+        {
+            var checkedReply = BookGroundingGuard.Check(bookContext, generated.Text);
+            if (!checkedReply.Accepted)
+            {
+                log.LogWarning("Book reply replaced with source extract; reason {Reason}", checkedReply.Reason);
+                grounded = BookGroundingGuard.Fallback(bookContext);
+            }
+        }
         sources.AddRange(grounded.Used.Where(x => !sources.Any(s => s.Id == x.Id)));
         var text = grounded.Text;
+        if (facts is not null)
+        {
+            sources.AddRange(facts.Items.Where(x => text.Contains("{{fact:" + x.Id + "}}", StringComparison.Ordinal))
+                .Select(x => x.Source));
+            text = facts.Render(text);
+        }
         if (selection is not null)
         {
             sources.AddRange(selection.Movies.Where(m => text.Contains("{{movie:" + m.Id + "}}", StringComparison.Ordinal))
@@ -127,25 +151,26 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
             text = selection.Render(text);
         }
         if (string.IsNullOrWhiteSpace(text)) throw new AiUnavailableException("empty_reply");
-        var final = (generated.Usage ?? new AiResult(text, generated.Model, generated.Tokens)) with { Text = text };
+        var final = generated with { Text = text };
         try { diagnostics.Record(context, final, bookContext.Sources.Count, sources.Count(x => x.Type == "book")); }
         catch (Exception e) when (e is not OperationCanceledException)
         { log.LogWarning("Reply observations unavailable: {Category}", e.GetType().Name); }
-        log.LogInformation("Friend exchange; version friend-dialogue-v2; planned {Planned}; thread prepared {Thread}; facts available {Facts}; references used {Sources}",
-            planIncluded, draft.ConversationState.Length > 0, facts?.Items.Length ?? 0, sources.Count);
-        return new(final, sources) { ConversationState = ConversationThread.Normalize(draft.ConversationState) };
+        var state = ConversationThread.FromExchange(currentText, text, context.ConversationState,
+            bookRequest?.Query, context.ExplicitStyleDelta);
+        log.LogInformation("Friend exchange; version sillytavern-ua-v1; format text; thread prepared {Thread}; facts available {Facts}; references used {Sources}",
+            state.Length > 0, facts?.Items.Length ?? 0, sources.Count);
+        return new(final, sources) { ConversationState = state };
 
         int Remaining()
         {
-            var limit = Math.Min(options.InputBudget,
-                Math.Min(options.TokensPerMinute, options.TokensPerDay) - options.TurnOutputBudget) - GroqClient.TurnSchemaReserve;
-            return limit - TokenEstimate.Count(messages);
+            return builder.InputLimit - TokenEstimate.Count(messages) - builder.ExampleReserve - 120 -
+                references.Sum(x => TokenEstimate.Count([new AiMessage("system", x)]));
         }
         bool Add(string text)
         {
             var message = new AiMessage("system", text);
             if (TokenEstimate.Count([message]) > Remaining()) return false;
-            messages.Insert(messages.FindLastIndex(m => m.Role == "user"), message);
+            references.Add(text);
             return true;
         }
     }

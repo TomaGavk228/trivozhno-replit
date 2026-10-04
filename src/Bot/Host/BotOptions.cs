@@ -11,9 +11,6 @@ public sealed class BotOptions
     public string Model { get; init; } = "openai/gpt-oss-120b";
     public string FallbackModel { get; init; } = "qwen/qwen3.8-27b";
     public string SummaryModel { get; init; } = "openai/gpt-oss-20b";
-    public string PlannerModel { get; init; } = "openai/gpt-oss-20b";
-    public bool DialoguePlanning { get; init; } = true;
-    public int PlannerTimeout { get; init; } = 10;
     public string ChatReasoningEffort { get; init; } = "low";
     public int AiConcurrency { get; init; } = 2;
     public int AiTimeout { get; init; } = 45;
@@ -49,9 +46,6 @@ public sealed class BotOptions
         Model = ModelName(c, "GROQ_MODEL", "openai/gpt-oss-120b"),
         FallbackModel = ModelName(c, "GROQ_FALLBACK_MODEL", "qwen/qwen3.8-27b"),
         SummaryModel = ModelName(c, "GROQ_SUMMARY_MODEL", "openai/gpt-oss-20b"),
-        PlannerModel = ModelName(c, "GROQ_PLANNER_MODEL", "openai/gpt-oss-20b"),
-        DialoguePlanning = Flag(c, "AI_DIALOGUE_PLANNING"),
-        PlannerTimeout = Int(c, "AI_PLANNER_TIMEOUT_SECONDS", 10, 2, 30),
         ChatReasoningEffort = ReasoningEffort(c),
         AiConcurrency = Int(c, "AI_MAX_CONCURRENCY", 2, 1, 16), AiTimeout = Int(c, "AI_TIMEOUT_SECONDS", 45, 1, 120),
         JobBudget = Int(c, "AI_JOB_BUDGET_SECONDS", 100, 10, 300), QueueWait = Int(c, "AI_MAX_QUEUE_WAIT_SECONDS", 300, 10, 3600),

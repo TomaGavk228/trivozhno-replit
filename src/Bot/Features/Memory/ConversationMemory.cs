@@ -63,7 +63,7 @@ public sealed class ConversationMemory(
 
     private int InputLimit => Math.Min(options.InputBudget,
         Math.Min(options.TokensPerMinute, options.TokensPerDay) -
-        options.TurnOutputBudget) - GroqClient.TurnSchemaReserve;
+        options.TurnOutputBudget);
 
     public async Task<ConversationContext> Build(
         BotUser user,
@@ -92,14 +92,12 @@ public sealed class ConversationMemory(
             priorSources.Any(s => s.Type == "book"), priorSources.Any(s => s.Type != "book"),
             ConversationThread.SearchContext(thread));
         var needsBooks = bookRequest is not null;
-        // The semantic plan runs after packing and may recognize wording the
-        // fallback did not. Keep space for its hint and retrieved evidence.
-        var referenceReserve = needsBooks || options.DialoguePlanning ? Math.Min(options.BookContextTokens, InputLimit / 3) :
+        var referenceReserve = needsBooks ? Math.Min(options.BookContextTokens, InputLimit / 3) :
             CuriosityCatalog.WantsReference(userMessage.Content, priorSources.Any(s => s.Type == "fact")) ? 650 : 0;
-        var budget = InputLimit - referenceReserve - (options.DialoguePlanning ? DialoguePlanner.HintReserve : 0);
-        var opening = previous.Count == 0 && ChatResponder.ClassifyDialogueAct(userMessage.Content) == DialogueAct.Greeting
-            ? "\nОрієнтир першого привітання персонажа: " + uk.OpeningMessage : "";
-        var core = new AiMessage("system", uk.ChatPrompt + opening);
+        // ST allocates mandatory definitions before history and then fits whole
+        // example blocks. Keep their room and its new-chat marker available.
+        var budget = InputLimit - referenceReserve - uk.Tavern.ExampleReserve - 120;
+        var core = new AiMessage("system", uk.ChatPrompt);
         if (TokenEstimate.Count([core, userMessage]) > budget) throw new ContextTooLargeException();
         var messages = new List<AiMessage> { core };
         var threadNote = new AiMessage("system", ConversationThread.Prompt(thread));
