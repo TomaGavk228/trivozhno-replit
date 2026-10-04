@@ -17,10 +17,12 @@ public static class SourceExcerpt
             RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100))
             .Select(m => m.Index + m.Length));
         if (boundaries[^1] != text.Length) boundaries.Add(text.Length);
-        var terms = Lexicon.Terms(query).ToHashSet();
+        // Rank small contiguous windows, so an exercise heading and its topic
+        // can live in neighbouring sentences. Keep conditions with the method.
         var center = Enumerable.Range(0, boundaries.Count - 1)
-            .OrderByDescending(i => Lexicon.Terms(text[boundaries[i]..boundaries[i + 1]])
-                .Distinct().Count(terms.Contains)).ThenBy(i => i).First();
+            .OrderByDescending(i => PassageRelevance.WindowScore(
+                text[boundaries[Math.Max(0, i - 1)]..boundaries[Math.Min(boundaries.Count - 1, i + 3)]], query))
+            .ThenBy(i => i).First();
         var first = center;
         var last = center + 1;
         var allowance = tokenBudget - 12;

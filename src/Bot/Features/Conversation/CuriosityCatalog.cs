@@ -39,7 +39,7 @@ public sealed class CuriosityCatalog
         Path.Combine(AppContext.BaseDirectory, "Resources", "Conversation", "curiosities.json"), [], Valid, log);
 
     public static bool WantsReference(string text, bool previousWasFact = false) =>
-        Matches(text, @"\b(розкаж\p{L}*|розпові\p{L}*|відволі\p{L}*|розваж\p{L}*|цікав\p{L}*\s+факт\p{L}*)\b|\bщось\s+цікав\p{L}*") ||
+        Matches(text, @"\b(факт|факти|фактів|фактом)\b") ||
         previousWasFact && (BookAdviceIntent.AsksSource(text) || Continues(text) || AsksAnother(text));
 
     public CuriositySelection? Find(string current, IReadOnlyList<string> seenIds,
@@ -59,9 +59,8 @@ public sealed class CuriosityCatalog
         var ranked = unseen.Where(x => !x.Tags.Any(excludedTags.Contains))
             .Select(x => new { Item = x, Score = x.Tags.Count(tag => current.Contains(tag, StringComparison.OrdinalIgnoreCase)) })
             .ToArray();
-        var best = ranked.Length == 0 ? 0 : ranked.Max(x => x.Score);
-        var candidates = ranked.Where(x => best == 0 || x.Score > 0)
-            .OrderByDescending(x => x.Score).ThenBy(_ => Random.Shared.Next())
+        var candidates = ranked.Where(x => x.Score > 0)
+            .OrderByDescending(x => x.Score).ThenBy(x => x.Item.Id, StringComparer.Ordinal)
             .Take(2).Select(x => x.Item).ToArray();
         return new(candidates);
     }

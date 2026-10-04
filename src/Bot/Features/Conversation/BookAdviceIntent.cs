@@ -16,7 +16,7 @@ public static class BookAdviceIntent
     public static string? Query(IReadOnlyList<AiMessage> conversation) => Plan(conversation)?.Query;
 
     public static BookAdviceRequest? Plan(IReadOnlyList<AiMessage> conversation, bool hasPreviousBooks = false,
-        bool hasPreviousOtherSources = false, string ongoingRequest = "")
+        bool hasPreviousOtherSources = false, string ongoingRequest = "", bool awaitsClarification = false)
     {
         var turns = conversation.Where(m => m.Role == "user").TakeLast(5)
             .Select(m => m.Content.Trim()).ToArray();
@@ -26,7 +26,7 @@ public static class BookAdviceIntent
             return null;
         var shortText = current.TrimEnd(' ', '.', '!', '?', ')', '(');
         var alternative = Matches(shortText,
-            @"^(а\s+)?(щось\s+інше|інший\s+(спосіб|варіант)|є\s+щось\s+інше|давай\s+(щось\s+)?інше|а\s+ще)$");
+            @"^(а\s+)?(щось\s+інше|інший\s+(спосіб|варіант|метод)|іншу\s+вправу|є\s+щось\s+інше|давай\s+(щось\s+)?інше|ще(\s+щось)?)$");
         var asksOriginalSource = AsksSource(current);
         var explicitBook = Matches(current, @"\bкниг\p{L}*\b");
         var currentTopic = HasTopic(current);
@@ -46,19 +46,20 @@ public static class BookAdviceIntent
         // wording of "I don't know what to write" must not erase the topic.
         // A recorded new topic supersedes older distress; specific unrelated
         // requests (e.g. a film) do not pass genericHelp in the first place.
-        var earlier = ongoingRequest.Length > 0
-            ? HasTopic(ongoingRequest) ? ongoingRequest : null
-            : turns.SkipLast(1).LastOrDefault(HasTopic);
+        var earlier = HasTopic(ongoingRequest) ? ongoingRequest : turns.SkipLast(1).LastOrDefault(HasTopic);
         if (asksOriginalSource && hasPreviousOtherSources && !hasPreviousBooks && !explicitBook)
             return null;
         var asksSource = asksOriginalSource && (explicitBook || hasPreviousBooks || currentTopic || earlier is not null);
         var continueSources = hasPreviousBooks && !alternative &&
             (asksSource || acceptsOffer || followup && !currentTopic && !asksAdvice);
-        var contextualRequest = earlier is not null && (genericHelp || followup || alternative || acceptsOffer);
+        var answersClarification = awaitsClarification && earlier is not null &&
+            !Matches(current, @"\b(зміни\p{L}*\s+тем\p{L}*|іншу\s+тему|розвія\p{L}*|відволі\p{L}*|поговор\p{L}*|фільм\p{L}*|гра\p{L}*|напиши|переклади)\b") &&
+            !Matches(shortText, @"^(ні|не хочу|нічого не хочу|не треба|досить|бувай)$");
+        var contextualRequest = earlier is not null && (genericHelp || followup || alternative || acceptsOffer || answersClarification);
         if (!asksSource && !continueSources && !(currentTopic && (asksAdvice || followup)) && !contextualRequest)
             return null;
         var query = current;
-        if (!currentTopic && earlier is not null) query += "\n" + earlier;
+        if (earlier is not null && (!currentTopic || answersClarification)) query += "\n" + earlier;
         // Preserve the latest request at the front; old context is optional.
         if (query.Length > 900) query = query[..900];
         return new(query, continueSources, asksSource, alternative);

@@ -39,6 +39,9 @@ public interface IAiClient
         double temperature,
         CancellationToken ct);
     Task<AiTurnResult> CompleteTurn(IReadOnlyList<AiMessage> messages, CancellationToken ct);
+    // Source metadata only; no generated memory or dialogue planner.
+    Task<AiResult> CompleteBook(IReadOnlyList<AiMessage> messages, CancellationToken ct) =>
+        Complete(messages, false, ct);
 }
 public sealed class AiUnavailableException(string reason = "unavailable") : Exception(reason)
 {

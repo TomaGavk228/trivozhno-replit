@@ -13,7 +13,7 @@ public static class ConversationThread
     // record from the actual exchange locally, with no second memory request.
     // Existing semantic records still deserialize through the same schema.
     public static string FromExchange(string input, string reply, string previous, string? bookQuery = null,
-        IReadOnlyList<string>? explicitPreferences = null)
+        IReadOnlyList<string>? explicitPreferences = null, bool awaitsBookClarification = false)
     {
         var priorRequest = "";
         var priorConstraints = "";
@@ -31,7 +31,8 @@ public static class ConversationThread
         return Normalize(JsonSerializer.Serialize(new
         {
             request = Clip(request, 100), constraints = Clip(constraints, 100), last_action = Clip(reply, 100),
-            feedback = normalized.Length > 0 ? Clip(input, 80) : "", pending = ""
+            feedback = normalized.Length > 0 ? Clip(input, 80) : "",
+            pending = awaitsBookClarification ? "book_clarification" : ""
         }, Json));
     }
 
@@ -65,7 +66,16 @@ public static class ConversationThread
         var normalized = Normalize(state);
         if (normalized.Length == 0) return "";
         using var json = JsonDocument.Parse(normalized);
-        return (Field(json.RootElement, "request", 100) + " " + Field(json.RootElement, "pending", 100)).Trim();
+        var pending = Field(json.RootElement, "pending", 100);
+        return (Field(json.RootElement, "request", 100) + " " + (pending == "book_clarification" ? "" : pending)).Trim();
+    }
+
+    public static bool AwaitsBookClarification(string? state)
+    {
+        var normalized = Normalize(state);
+        if (normalized.Length == 0) return false;
+        using var json = JsonDocument.Parse(normalized);
+        return Field(json.RootElement, "pending", 100) == "book_clarification";
     }
 
     public static string Prompt(string state) =>

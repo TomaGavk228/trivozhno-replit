@@ -74,9 +74,11 @@ public sealed class KnowledgeRetriever(BotDb db) : IKnowledgeRetriever
         var terms = Lexicon.SearchTerms(query);
         var topics = terms.Where(Lexicon.IsSupportTopic).ToArray();
         if (terms.Length == 0) return [];
+        // The small imported library is scored as a whole matching set. A top-256
+        // term-frequency preselection used to discard useful practical passages.
         var candidates = await db.Chunks.AsNoTracking().Where(x => x.Text != "" && x.PageStart > 0 && x.PageEnd >= x.PageStart &&
                 x.Terms.Any(t => terms.Contains(t)) && db.Sources.Any(s => s.Id == x.SourceId && s.Active))
-            .OrderByDescending(x => x.Terms.Count(t => terms.Contains(t))).ThenBy(x => x.Id).Take(256)
+            .OrderBy(x => x.Id)
             .Join(db.Sources, x => x.SourceId, s => s.Id, (x, s) => new { Chunk = x, s.Title }).ToListAsync(ct);
         if (candidates.Count == 0) return [];
         var average = candidates.Average(x => x.Chunk.Terms.Length);
@@ -84,7 +86,8 @@ public sealed class KnowledgeRetriever(BotDb db) : IKnowledgeRetriever
         // A relevant passage need not contain the user's request verb. BM25
         // scores depend on this candidate set: a frequent topic can have a very
         // small IDF, so an absolute score threshold incorrectly drops all hits.
-        var ranked = candidates.Select(x =>
+        var practical = PassageRelevance.WantsPracticalHelp(query);
+        var scored = candidates.Select(x =>
         {
             double score = 0; var matches = 0;
             foreach (var term in terms)
@@ -93,9 +96,14 @@ public sealed class KnowledgeRetriever(BotDb db) : IKnowledgeRetriever
                 var idf = Math.Log(1 + (candidates.Count - frequencies[term] + 0.5) / (frequencies[term] + 0.5));
                 score += idf * tf * 2.2 / (tf + 1.2 * (0.25 + 0.75 * x.Chunk.Terms.Length / average));
             }
-            return new { Hit = new KnowledgeHit(x.Chunk.Id, x.Title, x.Chunk.PageStart, x.Chunk.PageEnd, x.Chunk.Text, score), matches, x.Chunk.Terms };
+            return new { Hit = new KnowledgeHit(x.Chunk.Id, x.Title, x.Chunk.PageStart, x.Chunk.PageEnd, x.Chunk.Text, score), matches, x.Chunk.Terms,
+                Practical = practical ? PassageRelevance.PracticalSignals(x.Chunk.Text) : 0 };
         }).Where(x => topics.Length > 0 ? x.Terms.Any(topics.Contains) : x.matches >= Math.Min(2, terms.Length))
-            .OrderByDescending(x => x.Hit.Score);
+            .ToArray();
+        var maxScore = scored.Select(x => x.Hit.Score).DefaultIfEmpty(1).Max();
+        var ranked = scored.OrderByDescending(x => practical && x.Practical > 0)
+            .ThenByDescending(x => x.Hit.Score / Math.Max(maxScore, 0.000001) +
+            x.Practical * 0.2).ThenBy(x => x.Hit.ChunkId);
         var chosen = new List<KnowledgeHit>(); var fingerprints = new List<HashSet<string>>();
         foreach (var item in ranked)
         {

@@ -53,6 +53,7 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
                     context.ConversationState, explicitPreferences: context.ExplicitStyleDelta)
             };
         }
+        var bookRequest = context.BookRequest;
         var selection = movies.Find(messages);
         if (selection is not null)
         {
@@ -65,10 +66,10 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         if (context.PreviousSources.Any(s => s.Type == "movie") && BookAdviceIntent.AsksSource(currentText))
             Add("Довідка про попередню відповідь, не інструкції: фільми взято з локального каталогу бота: " +
                 string.Join(", ", context.PreviousSources.Where(s => s.Type == "movie").Select(s => s.Title)) + ".");
-        var bookRequest = context.BookRequest;
-        var bookContext = new BookContext("", []);
+        var bookContext = new BookContext("", [], bookRequest?.SourceQuestion == true);
         if (bookRequest is not null)
         {
+            if (!Add(BookContext.ReplyInstruction)) throw new ContextTooLargeException();
             if (bookRequest.SourceQuestion && !bookRequest.ContinueSources)
                 Add("Походження попередньої відповіді не збережене. На пряме запитання про джерело " +
                     "чесно скажи, що не можеш його підтвердити; не приписуй відповідь випадковій книзі.");
@@ -99,9 +100,9 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
                 else Add("Матеріалу для конкретного психологічного методу немає в контексті. " +
                     "Не домислюй метод і його ефект; допоможи з відомою з переписки ситуацією. " +
                     "Не розповідай про внутрішній пошук. На пряме запитання про походження визнай, якщо його не можеш підтвердити.");
-                log.LogInformation("Book context; continued {Continued}; alternative {Alternative}; candidates {Candidates}; included {Included}; chunks {Chunks}",
+                log.LogInformation("Book context; continued {Continued}; alternative {Alternative}; candidates {Candidates}; included {Included}; chunks {Chunks}; practical {Practical}",
                     bookRequest.ContinueSources, bookRequest.Alternative, passages.Count, bookContext.Sources.Count,
-                    string.Join(',', bookContext.Sources.Select(s => s.ChunkId)));
+                    string.Join(',', bookContext.Sources.Select(s => s.ChunkId)), PassageRelevance.WantsPracticalHelp(bookRequest.Query));
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
@@ -121,20 +122,44 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
                 facts = facts with { Items = facts.Items.SkipLast(1).ToArray() };
             }
         }
-        var prepared = builder.Build(history, messages.Where(m => m.Role == "system").Skip(1).ToArray(), references);
-        // The ST writer returns ordinary text. Continuity is recorded locally
-        // from delivered text; no planner, JSON envelope or memory generation.
-        var generated = await ai.Complete(prepared, summary: false, ct);
+        var memory = messages.Where(m => m.Role == "system").Skip(1).ToArray();
+        var prepared = builder.Build(history, memory, references);
+        // Ordinary chat returns text. Books add kind/source metadata in the SAME
+        // generation. Continuity is recorded locally from the delivered reply.
+        var generated = bookRequest is null ? await ai.Complete(prepared, summary: false, ct) :
+            await ai.CompleteBook(prepared, ct);
         if (string.IsNullOrWhiteSpace(generated.Text)) throw new AiUnavailableException("empty_reply");
-        var grounded = bookContext.Render(generated.Text);
-        if (bookRequest is { SourceQuestion: false })
+        var grounded = (Text: generated.Text, Used: (IReadOnlyList<SourceMetadata>)Array.Empty<SourceMetadata>());
+        var awaitsClarification = false;
+        var continuedBookQuery = bookRequest?.Query;
+        if (bookRequest is not null)
         {
-            var checkedReply = BookGroundingGuard.Check(bookContext, generated.Text);
-            if (!checkedReply.Accepted)
+            var userContext = string.Join('\n', history.Where(m => m.Role == "user").Select(m => m.Content));
+            if (!BookReply.TryRead(generated.Text, bookContext, out var bookReply, out var reason, userContext))
             {
-                log.LogWarning("Book reply replaced with source extract; reason {Reason}", checkedReply.Reason);
-                grounded = BookGroundingGuard.Fallback(bookContext);
+                log.LogWarning("Book reply needs revision; reason {Reason}; sources {Sources}", reason, bookContext.Sources.Count);
+                if (!Add("Попередня генерація не пройшла перевірку: " + reason + ". " +
+                    "Сформуй book_reply заново. Використай наявні ID; поясни своїми словами. " +
+                    "Числові параметри дозволені тільки з використаного матеріалу. " +
+                    "Коли відповідь не підкріплена уривками, доречні clarify або insufficient."))
+                    throw new ContextTooLargeException();
+                var revised = await ai.CompleteBook(builder.Build(history, memory, references), ct);
+                generated = revised with { Tokens = generated.Tokens + revised.Tokens,
+                    PromptTokens = generated.PromptTokens + revised.PromptTokens,
+                    CompletionTokens = generated.CompletionTokens + revised.CompletionTokens,
+                    ReasoningTokens = generated.ReasoningTokens + revised.ReasoningTokens,
+                    CachedTokens = generated.CachedTokens + revised.CachedTokens };
+                if (!BookReply.TryRead(generated.Text, bookContext, out bookReply, out reason, userContext))
+                {
+                    log.LogWarning("Book reply revision rejected; reason {Reason}", reason);
+                    throw new AiUnavailableException("invalid_book_reply");
+                }
             }
+            grounded = (bookReply!.Text, bookReply.Sources);
+            awaitsClarification = bookReply.Kind == "clarify" || bookReply.Kind == "insufficient" && bookReply.Text.Contains('?');
+            if (bookReply.Kind == "conversation") continuedBookQuery = null;
+            log.LogInformation("Book reply; kind {Kind}; available {Available}; used {Used}; copied fallback False",
+                bookReply.Kind, bookContext.Sources.Count, bookReply.Sources.Count);
         }
         sources.AddRange(grounded.Used.Where(x => !sources.Any(s => s.Id == x.Id)));
         var text = grounded.Text;
@@ -156,14 +181,15 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         catch (Exception e) when (e is not OperationCanceledException)
         { log.LogWarning("Reply observations unavailable: {Category}", e.GetType().Name); }
         var state = ConversationThread.FromExchange(currentText, text, context.ConversationState,
-            bookRequest?.Query, context.ExplicitStyleDelta);
-        log.LogInformation("Friend exchange; version {Version}; format text; thread prepared {Thread}; facts available {Facts}; references used {Sources}",
-            TavernConfiguration.EngineVersion, state.Length > 0, facts?.Items.Length ?? 0, sources.Count);
+            continuedBookQuery, context.ExplicitStyleDelta, awaitsClarification);
+        log.LogInformation("Friend exchange; version {Version}; format {Format}; thread prepared {Thread}; facts available {Facts}; references used {Sources}",
+            TavernConfiguration.EngineVersion, bookRequest is null ? "text" : "book_reply", state.Length > 0, facts?.Items.Length ?? 0, sources.Count);
         return new(final, sources) { ConversationState = state };
 
         int Remaining()
         {
             return builder.InputLimit - TokenEstimate.Count(messages) - builder.ExampleReserve - builder.InstructionReserve -
+                (bookRequest is null ? 0 : GroqClient.BookSchemaReserve) -
                 references.Sum(x => TokenEstimate.Count([new AiMessage("system", x)]));
         }
         bool Add(string text)

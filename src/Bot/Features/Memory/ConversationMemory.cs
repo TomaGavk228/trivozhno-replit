@@ -90,9 +90,10 @@ public sealed class ConversationMemory(
         var seenFacts = ExtractSeenFacts(priorAssistant?.SourcesJson, priorAssistant?.Text);
         var bookRequest = BookAdviceIntent.Plan(previous.Select(ToMessage).Append(userMessage).ToArray(),
             priorSources.Any(s => s.Type == "book"), priorSources.Any(s => s.Type != "book"),
-            ConversationThread.SearchContext(thread));
+            ConversationThread.SearchContext(thread), ConversationThread.AwaitsBookClarification(thread));
         var needsBooks = bookRequest is not null;
-        var referenceReserve = needsBooks ? Math.Min(options.BookContextTokens, InputLimit / 3) :
+        var referenceReserve = needsBooks ? Math.Min(options.BookContextTokens, InputLimit / 3) +
+            GroqClient.BookSchemaReserve + TokenEstimate.Count(BookContext.ReplyInstruction) + 200 :
             CuriosityCatalog.WantsReference(userMessage.Content, priorSources.Any(s => s.Type == "fact")) ? 650 : 0;
         // ST allocates mandatory definitions before history and then fits whole
         // example blocks. Keep their room and its new-chat marker available.

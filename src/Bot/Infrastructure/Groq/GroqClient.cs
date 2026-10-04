@@ -22,7 +22,8 @@ public sealed partial class GroqClient(
         CancellationToken ct,
         string? forcedModel = null,
         double? forcedTemperature = null,
-        bool exactModel = false)
+        bool exactModel = false,
+        bool bookReply = false)
     {
         // Normalize before quota accounting, payload generation and request logs.
         // Payload builders also normalize for direct callers; Prepare is idempotent.
@@ -39,8 +40,8 @@ public sealed partial class GroqClient(
         budget.CancelAfter(TimeSpan.FromSeconds(options.JobBudget));
         var token = budget.Token;
         var model = forcedModel ?? (summary ? options.SummaryModel : options.Model);
-        var schemaReserve = structuredTurn ? TurnSchemaReserve : 0;
-        var briefChat = !summary && !structuredTurn && !ChatReplyBudget.WantsDetail(messages);
+        var schemaReserve = bookReply ? BookSchemaReserve : structuredTurn ? TurnSchemaReserve : 0;
+        var briefChat = !summary && !structuredTurn && !bookReply && !ChatReplyBudget.WantsDetail(messages);
         var completionTokens = 0;
         var lengthRetried = false;
         var extraCompletionTokens = 0;
@@ -55,7 +56,7 @@ public sealed partial class GroqClient(
 
             var effort = ResolveReasoningEffort(model, summary, options.ChatReasoningEffort);
             var reasoning = effort is "low" or "medium" or "high";
-            completionTokens = summary ? SummaryCompletionTokens : structuredTurn ? options.TurnOutputBudget :
+            completionTokens = summary ? SummaryCompletionTokens : structuredTurn || bookReply ? options.TurnOutputBudget :
                 ChatReplyBudget.Limit(messages, options.TurnOutputBudget, effort);
             completionTokens += extraCompletionTokens;
 
@@ -88,6 +89,7 @@ public sealed partial class GroqClient(
                     payload["temperature"] = resources?.Tavern.Preset.Temperature ?? 1;
                     payload["top_p"] = resources?.Tavern.Preset.TopP ?? 1;
                 }
+                if (bookReply) payload["response_format"] = BookResponseFormat;
                 if (forcedTemperature is not null) payload["temperature"] = forcedTemperature.Value;
                 req.Content = JsonContent.Create(payload);
                 log.LogInformation("Groq request; model {Model}; reasoning {Effort}; output budget {Budget}; roles {Roles}; last user chars {UserChars}; format {Format}",
@@ -95,7 +97,7 @@ public sealed partial class GroqClient(
                     completionTokens,
                     string.Join(',', messages.Select(m => m.Role)),
                     messages.LastOrDefault(m => m.Role == "user" && !m.IsApplicationPrompt)?.Content.Length ?? 0,
-                    structuredTurn ? "json" : "text");
+                    bookReply ? "book_reply" : structuredTurn ? "json" : "text");
 
                 var network = Stopwatch.StartNew();
                 using var response = await http.SendAsync(req, timeout.Token);
