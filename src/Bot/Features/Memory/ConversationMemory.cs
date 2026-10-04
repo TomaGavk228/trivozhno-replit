@@ -92,12 +92,14 @@ public sealed class ConversationMemory(
             priorSources.Any(s => s.Type == "book"), priorSources.Any(s => s.Type != "book"),
             ConversationThread.SearchContext(thread));
         var needsBooks = bookRequest is not null;
-        // Reserve reference room for requested advice or a factual diversion.
-        // Other turns can use the full allowance for actual conversation.
-        var referenceReserve = needsBooks ? Math.Min(options.BookContextTokens, InputLimit / 3) :
+        // The semantic plan runs after packing and may recognize wording the
+        // fallback did not. Keep space for its hint and retrieved evidence.
+        var referenceReserve = needsBooks || options.DialoguePlanning ? Math.Min(options.BookContextTokens, InputLimit / 3) :
             CuriosityCatalog.WantsReference(userMessage.Content, priorSources.Any(s => s.Type == "fact")) ? 650 : 0;
-        var budget = InputLimit - referenceReserve;
-        var core = new AiMessage("system", uk.ChatPrompt);
+        var budget = InputLimit - referenceReserve - (options.DialoguePlanning ? DialoguePlanner.HintReserve : 0);
+        var opening = previous.Count == 0 && ChatResponder.ClassifyDialogueAct(userMessage.Content) == DialogueAct.Greeting
+            ? "\nОрієнтир першого привітання персонажа: " + uk.OpeningMessage : "";
+        var core = new AiMessage("system", uk.ChatPrompt + opening);
         if (TokenEstimate.Count([core, userMessage]) > budget) throw new ContextTooLargeException();
         var messages = new List<AiMessage> { core };
         var threadNote = new AiMessage("system", ConversationThread.Prompt(thread));
@@ -172,7 +174,7 @@ public sealed class ConversationMemory(
             "reference reserve {BookReserve}; thread present {HasThread}; examples 0; current preserved {CurrentPreserved}",
             current.Id, userMessage.Content.Length, history.Count, previous.Count,
             messages.Count(m => m.Role == "system"), hasStyle, hasSummary,
-            memoryIncluded ? memories.Episodes : 0, hasMood, InputLimit - budget, hasThread,
+            memoryIncluded ? memories.Episodes : 0, hasMood, referenceReserve, hasThread,
             messages[^1] == userMessage);
         return new(messages, hasMood)
         {

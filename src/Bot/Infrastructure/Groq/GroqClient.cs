@@ -20,7 +20,8 @@ public sealed partial class GroqClient(
         CancellationToken ct,
         string? forcedModel = null,
         double? forcedTemperature = null,
-        bool exactModel = false)
+        bool exactModel = false,
+        bool planning = false)
     {
         // Normalize before quota accounting, payload generation and request logs.
         // Payload builders also normalize for direct callers; Prepare is idempotent.
@@ -37,6 +38,7 @@ public sealed partial class GroqClient(
         budget.CancelAfter(TimeSpan.FromSeconds(options.JobBudget));
         var token = budget.Token;
         var model = forcedModel ?? (summary ? options.SummaryModel : options.Model);
+        var schemaReserve = planning ? PlanSchemaReserve : structuredTurn ? TurnSchemaReserve : 0;
         var briefChat = !summary && !structuredTurn && !ChatReplyBudget.WantsDetail(messages);
         var completionTokens = 0;
         var lengthRetried = false;
@@ -50,14 +52,14 @@ public sealed partial class GroqClient(
         {
             if (!exactModel && attempt == 2) model = options.FallbackModel;
 
-            var effort = ResolveReasoningEffort(model, summary, options.ChatReasoningEffort);
+            var effort = ResolveReasoningEffort(model, summary, planning ? "low" : options.ChatReasoningEffort);
             var reasoning = effort is "low" or "medium" or "high";
-            completionTokens = summary ? SummaryCompletionTokens : structuredTurn ? options.TurnOutputBudget :
+            completionTokens = planning ? PlanCompletionTokens : summary ? SummaryCompletionTokens : structuredTurn ? options.TurnOutputBudget :
                 ChatReplyBudget.Limit(messages, options.TurnOutputBudget, effort);
             completionTokens += extraCompletionTokens;
 
             admission.Restart();
-            var inputEstimate = TokenEstimate.Count(messages) + (structuredTurn ? TurnSchemaReserve : 0);
+            var inputEstimate = TokenEstimate.Count(messages) + schemaReserve;
             var reservation = await quota.Reserve(
                 model,
                 inputEstimate + completionTokens,
@@ -76,17 +78,17 @@ public sealed partial class GroqClient(
                     "https://api.groq.com/openai/v1/chat/completions");
                 req.Headers.Authorization =
                     new AuthenticationHeaderValue("Bearer", options.GroqKey);
-                var payload = structuredTurn
+                var payload = planning ? PlanPayload(model, messages) : structuredTurn
                     ? TurnPayload(model, messages, completionTokens, options.ChatReasoningEffort)
                     : Payload(model, messages, summary, options.ChatReasoningEffort);
                 payload["max_completion_tokens"] = completionTokens;
                 if (forcedTemperature is not null) payload["temperature"] = forcedTemperature.Value;
                 req.Content = JsonContent.Create(payload);
-                log.LogInformation("Groq request; model {Model}; reasoning {Effort}; output budget {Budget}; roles {Roles}; last user chars {UserChars}",
+                log.LogInformation("Groq request; model {Model}; reasoning {Effort}; output budget {Budget}; roles {Roles}; last user chars {UserChars}; planning {Planning}",
                     model, payload.GetValueOrDefault("reasoning_effort") ?? "default",
                     completionTokens,
                     string.Join(',', messages.Select(m => m.Role)),
-                    messages.LastOrDefault(m => m.Role == "user")?.Content.Length ?? 0);
+                    messages.LastOrDefault(m => m.Role == "user")?.Content.Length ?? 0, planning);
 
                 var network = Stopwatch.StartNew();
                 using var response = await http.SendAsync(req, timeout.Token);
@@ -190,7 +192,7 @@ public sealed partial class GroqClient(
                     ? finish.GetString() : null;
                 if (finishReason == "length")
                 {
-                    if (briefChat && !reasoning && !lengthRetried && attempt < 2)
+                    if (briefChat && !reasoning && !lengthRetried && attempt + 1 < maxAttempts)
                     {
                         // Retry only an unfinished response, once, with the SAME allowance.
                         // Never turn a short advice request into a larger generation.
@@ -200,9 +202,9 @@ public sealed partial class GroqClient(
                         continue;
                     }
                     var room = Math.Min(options.TokensPerMinute, options.TokensPerDay) -
-                        TokenEstimate.Count(messages) - (structuredTurn ? TurnSchemaReserve : 0);
+                        TokenEstimate.Count(messages) - schemaReserve;
                     var larger = Math.Min(3600, Math.Min(room, completionTokens + 1200));
-                    if (!summary && (!briefChat || reasoning) && !lengthRetried && attempt < 2 && larger > completionTokens)
+                    if (!planning && !summary && (!briefChat || reasoning) && !lengthRetried && attempt + 1 < maxAttempts && larger > completionTokens)
                     {
                         // Regenerate from the same conversation, never send partial JSON/text.
                         // Normal successful turns still use a single generation.
@@ -218,7 +220,7 @@ public sealed partial class GroqClient(
                     throw new AiUnavailableException("empty_or_unfinished_output");
 
                 log.LogInformation(
-                    "Groq response; model {Model}; total {Total}; prompt {Prompt}; completion {Completion}; reasoning {Reasoning}; cached {Cached}; summary {Summary}; structuredTurn {StructuredTurn}",
+                    "Groq response; model {Model}; total {Total}; prompt {Prompt}; completion {Completion}; reasoning {Reasoning}; cached {Cached}; summary {Summary}; structuredTurn {StructuredTurn}; planning {Planning}",
                     model,
                     usage.Tokens,
                     usage.PromptTokens,
@@ -226,7 +228,8 @@ public sealed partial class GroqClient(
                     usage.ReasoningTokens,
                     usage.CachedTokens,
                     summary,
-                    structuredTurn);
+                    structuredTurn,
+                    planning);
                 return usage;
             }
             catch (Exception e) when (

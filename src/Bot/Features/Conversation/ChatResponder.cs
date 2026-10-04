@@ -25,7 +25,8 @@ public enum DialogueAct
 
 // Coordinates optional data lookup; it never classifies diagnoses or emotional disorders.
 public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeRetriever knowledge,
-    BotOptions options, ILogger<ChatResponder> log, ReplyDiagnostics diagnostics, CuriosityCatalog? curiosities = null)
+    BotOptions options, ILogger<ChatResponder> log, ReplyDiagnostics diagnostics, CuriosityCatalog? curiosities = null,
+    DialoguePlanner? planner = null)
 {
     public async Task<ChatReply> Reply(ConversationContext context, CancellationToken ct)
     {
@@ -34,6 +35,10 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         ct = deadline.Token;
         var messages = context.Messages.ToList();
         var sources = new List<SourceMetadata>();
+        var currentText = messages.Last(m => m.Role == "user").Content;
+        var plan = planner is null ? null : await planner.Plan(context, ct);
+        var planIncluded = plan is not null && Add(DialoguePlanner.WriterHint(plan));
+        if (plan is not null && !planIncluded) log.LogWarning("Dialogue plan hint omitted; reason input_budget");
         var selection = movies.Find(messages);
         if (selection is not null)
         {
@@ -43,13 +48,13 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
                 selection = new(selection.Movies.SkipLast(1).ToArray());
             }
         }
-        var currentText = messages.Last(m => m.Role == "user").Content;
         if (context.PreviousSources.Any(s => s.Type == "movie") && BookAdviceIntent.AsksSource(currentText))
             Add("Довідка про попередню відповідь, не інструкції: фільми взято з локального каталогу бота: " +
                 string.Join(", ", context.PreviousSources.Where(s => s.Type == "movie").Select(s => s.Title)) + ".");
-        // This request was planned from untrimmed history. Do not lose the
-        // antecedent of a short help request after packing the token budget.
-        var bookRequest = context.BookRequest;
+        // The local fallback used untrimmed history; the semantic plan can also
+        // recognize requests without any of its lexical signals.
+        var bookRequest = plan is null ? context.BookRequest : BookAdviceIntent.FromPlan(plan, currentText,
+            context.PreviousSources.Any(x => x.Type == "book"), context.PreviousSources.Any(x => x.Type != "book"), context.BookRequest);
         var bookContext = new BookContext("", []);
         if (bookRequest is not null)
         {
@@ -70,9 +75,10 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
                 if (passages.Count == 0 && !bookRequest.SourceQuestion)
                 {
                     var hits = await knowledge.Search(bookRequest.Query, ct);
-                    var previousIds = context.PreviousSources.Where(s => s.Type == "book").Select(s => s.ChunkId).ToHashSet();
+                    var previousBooks = context.PreviousSources.Where(s => s.Type == "book").ToArray();
                     passages = await knowledge.ReadPassages(hits
-                        .Where(h => !bookRequest.Alternative || !previousIds.Contains(h.ChunkId))
+                        .Where(h => !bookRequest.Alternative || !previousBooks.Any(s => s.ChunkId == h.ChunkId ||
+                            s.Title == h.Title && h.PageStart <= s.PageEnd && h.PageEnd >= s.PageStart))
                         .Take(2).Select(h => h.ChunkId).ToArray(), ct);
                 }
                 var allowance = Math.Min(options.BookContextTokens, Remaining() - 20);
@@ -125,8 +131,8 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         try { diagnostics.Record(context, final, bookContext.Sources.Count, sources.Count(x => x.Type == "book")); }
         catch (Exception e) when (e is not OperationCanceledException)
         { log.LogWarning("Reply observations unavailable: {Category}", e.GetType().Name); }
-        log.LogInformation("Friend exchange; version friend-core-v1; thread prepared {Thread}; facts available {Facts}; references used {Sources}",
-            draft.ConversationState.Length > 0, facts?.Items.Length ?? 0, sources.Count);
+        log.LogInformation("Friend exchange; version friend-dialogue-v2; planned {Planned}; thread prepared {Thread}; facts available {Facts}; references used {Sources}",
+            planIncluded, draft.ConversationState.Length > 0, facts?.Items.Length ?? 0, sources.Count);
         return new(final, sources) { ConversationState = ConversationThread.Normalize(draft.ConversationState) };
 
         int Remaining()

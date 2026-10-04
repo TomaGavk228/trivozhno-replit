@@ -7,17 +7,11 @@ namespace Trivozhno.Features.Conversation;
 public sealed record BookAdviceRequest(string Query, bool ContinueSources, bool SourceQuestion,
     bool Alternative = false);
 
-// These signals only request a local lookup. They never prescribe a reply,
-// diagnose a person, or change the bot's conversational character.
+// Lexical fallback when the bounded semantic planner is unavailable. These
+// signals request material; they never prescribe an exercise or a reply.
 public static class BookAdviceIntent
 {
     private const string AdvicePattern = @"\b(що|шо)\s+(мені\s+)?робити|\bяк\s+(мені\s+)?(це\s+зробити|бути|впоратися|впоратись|заспокоїтися|заспокоїтись|позбутися|перестати)|\b(порад\p{L}*|підкаж\p{L}*|помож\p{L}*|допомож\p{L}*)\b|\bє\s+(якийсь\s+)?спосіб|\bможна\s+щось\s+(з|із)\s+цим\s+зробити";
-    private static readonly HashSet<string> Topics =
-    [
-        "тривога", "страх", "самотність", "стосунки", "межі", "самооцінка",
-        "провина", "злість", "конфлікт", "втома", "довіра", "ревнощі",
-        "розставання", "почуття", "підтримка", "прокрастинація", "перфекціонізм"
-    ];
 
     public static string? Query(IReadOnlyList<AiMessage> conversation) => Plan(conversation)?.Query;
 
@@ -37,7 +31,7 @@ public static class BookAdviceIntent
         var explicitBook = Matches(current, @"\bкниг\p{L}*\b");
         var currentTopic = HasTopic(current);
         var asksAdvice = Matches(current, AdvicePattern) ||
-            currentTopic && Matches(current, @"\b(поясни|розкаж\p{L}*|розпові\p{L}*)\b");
+            currentTopic && (Matches(current, @"\b(як|що|шо|чому|поясни|розкаж\p{L}*|розпові\p{L}*)\b") || current.Contains('?'));
         var followup = RefersToAdvice(shortText) || currentTopic &&
             Matches(current, @"^(а\s+|і\s+)?(поясни|як саме|чому)\b");
         var genericHelp = Matches(shortText,
@@ -69,7 +63,22 @@ public static class BookAdviceIntent
         return new(query, continueSources, asksSource, alternative);
     }
 
-    private static bool HasTopic(string text) => Lexicon.Terms(text).Any(Topics.Contains);
+    public static BookAdviceRequest? FromPlan(AiTurnPlan plan, string current,
+        bool hasPreviousBooks, bool hasPreviousOtherSources, BookAdviceRequest? fallback)
+    {
+        // Explicit provenance questions always refer to the delivered reply;
+        // a planner may not substitute a newly retrieved book for it.
+        if (AsksSource(current)) return fallback;
+        // A successful semantic decision can decline retrieval for a joke or
+        // casual mention of anxiety. The lexical route is only a fallback.
+        if (plan.BookMode == "none") return null;
+        if (plan.BookMode == "source" && hasPreviousOtherSources && !hasPreviousBooks) return null;
+        var query = string.IsNullOrWhiteSpace(plan.BookQuery) ? fallback?.Query ?? current : plan.BookQuery;
+        return new(query, hasPreviousBooks && (plan.BookMode is "continue" or "source"),
+            plan.BookMode == "source", plan.BookMode == "alternative");
+    }
+
+    private static bool HasTopic(string text) => Lexicon.Terms(text).Any(Lexicon.IsSupportTopic);
 
     public static bool AsksSource(string text) => Matches(text,
         @"^(а\s+)?звідки[.!? ]*$|\bзвідки\s+(це|ти|інформація|порада|метод)\b|\bджерел\p{L}*|\b(яка|якої|яку)\s+(це\s+)?книг|\b(якій|яка)\s+сторін");

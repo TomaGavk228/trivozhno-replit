@@ -23,6 +23,9 @@ public sealed record AiTurnResult(AiTurnDraft Turn, string Model, int Tokens)
 {
     public AiResult? Usage { get; init; }
 }
+// A decision about the current exchange, not an emotional profile or a reply.
+public sealed record AiTurnPlan(string Request, string Move, string Avoid, string BookMode, string BookQuery);
+public sealed record AiPlanResult(AiTurnPlan Plan, AiResult Usage);
 public interface IAiClient
 {
     Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct);
@@ -32,6 +35,8 @@ public interface IAiClient
         double temperature,
         CancellationToken ct);
     Task<AiTurnResult> CompleteTurn(IReadOnlyList<AiMessage> messages, CancellationToken ct);
+    Task<AiPlanResult?> PlanTurn(IReadOnlyList<AiMessage> messages, CancellationToken ct) =>
+        Task.FromResult<AiPlanResult?>(null);
 }
 public sealed class AiUnavailableException(string reason = "unavailable") : Exception(reason)
 {

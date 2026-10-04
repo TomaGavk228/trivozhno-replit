@@ -31,6 +31,7 @@ public static class ServiceRegistration
         services.AddSingleton<DialogueExamples>(); services.AddSingleton<MovieCatalog>();
         services.AddSingleton<CuriosityCatalog>();
         services.AddSingleton<ReplyDiagnostics>();
+        services.AddScoped<DialoguePlanner>();
         services.AddScoped<ChatResponder>();
         services.AddScoped<BookImporter>(); services.AddScoped<Ui>(); services.AddScoped<DraftStore>(); services.AddScoped<Router>();
         services.AddScoped<ConversationHandler>(); services.AddScoped<ConfessionHandler>(); services.AddScoped<MoodHandler>();

@@ -13,6 +13,18 @@ public interface IKnowledgeRetriever
 
 public static class Lexicon
 {
+    private static readonly HashSet<string> SupportTopics =
+    [
+        "тривога", "страх", "самотність", "стосунки", "межі", "самооцінка",
+        "провина", "злість", "конфлікт", "втома", "довіра", "ревнощі",
+        "розставання", "почуття", "підтримка", "прокрастинація", "перфекціонізм"
+    ];
+    private static readonly HashSet<string> SearchNoise =
+        "робити зробити роблю зроблю допомогти допоможи допоможіть допомога порада поради порадь підкажи побороти подолати позбутися позбавитися впоратися впоратись заспокоїтися заспокоїтись перестати спосіб способи метод методи будь ласка краще знати зрозуміти".Split(' ').ToHashSet();
+
+    public static bool IsSupportTopic(string term) => SupportTopics.Contains(term);
+    public static string[] SearchTerms(string text) => Terms(text).Where(x => !SearchNoise.Contains(x))
+        .Distinct().Take(24).ToArray();
     private static readonly HashSet<string> Stop = "і й а та але або чи що щоб як так це цей ця ці воно він вона вони ми ви ти я мені мене мої мій моя моє свої свій себе собі тебе тобі твій ваш наш його її їх їм нам вам нас вас у в на до за з із зі для від про при по не ні є був була були бути буде дуже вже ще теж також навіть просто зараз сьогодні вчора коли тоді тому бо лише тільки все всіх всі щось хтось нічого ніхто там тут десь кожен іноді часто завжди привіт добрий день доброго дякую спасибі ок добре гаразд знову хочеться хочу хочуся можу можна може треба потрібно хотів після перед під над між без через один два три розкажи поясни напиши підкажи".Split(' ').ToHashSet();
     private static readonly Dictionary<string, string> Forms = BuildForms();
     private static Dictionary<string, string> BuildForms()
@@ -59,7 +71,8 @@ public sealed class KnowledgeRetriever(BotDb db) : IKnowledgeRetriever
 {
     public async Task<IReadOnlyList<KnowledgeHit>> Search(string query, CancellationToken ct)
     {
-        var terms = Lexicon.Terms(query).Distinct().Take(24).ToArray();
+        var terms = Lexicon.SearchTerms(query);
+        var topics = terms.Where(Lexicon.IsSupportTopic).ToArray();
         if (terms.Length == 0) return [];
         var candidates = await db.Chunks.AsNoTracking().Where(x => x.Text != "" && x.PageStart > 0 && x.PageEnd >= x.PageStart &&
                 x.Terms.Any(t => terms.Contains(t)) && db.Sources.Any(s => s.Id == x.SourceId && s.Active))
@@ -68,6 +81,9 @@ public sealed class KnowledgeRetriever(BotDb db) : IKnowledgeRetriever
         if (candidates.Count == 0) return [];
         var average = candidates.Average(x => x.Chunk.Terms.Length);
         var frequencies = terms.ToDictionary(t => t, t => candidates.Count(x => x.Chunk.Terms.Contains(t)));
+        // A relevant passage need not contain the user's request verb. BM25
+        // scores depend on this candidate set: a frequent topic can have a very
+        // small IDF, so an absolute score threshold incorrectly drops all hits.
         var ranked = candidates.Select(x =>
         {
             double score = 0; var matches = 0;
@@ -78,13 +94,14 @@ public sealed class KnowledgeRetriever(BotDb db) : IKnowledgeRetriever
                 score += idf * tf * 2.2 / (tf + 1.2 * (0.25 + 0.75 * x.Chunk.Terms.Length / average));
             }
             return new { Hit = new KnowledgeHit(x.Chunk.Id, x.Title, x.Chunk.PageStart, x.Chunk.PageEnd, x.Chunk.Text, score), matches, x.Chunk.Terms };
-        }).Where(x => x.matches >= Math.Min(2, terms.Length) && x.Hit.Score >= 0.15).OrderByDescending(x => x.Hit.Score);
+        }).Where(x => topics.Length > 0 ? x.Terms.Any(topics.Contains) : x.matches >= Math.Min(2, terms.Length))
+            .OrderByDescending(x => x.Hit.Score);
         var chosen = new List<KnowledgeHit>(); var fingerprints = new List<HashSet<string>>();
         foreach (var item in ranked)
         {
             var set = item.Terms.ToHashSet();
             if (fingerprints.Any(s => (double)s.Intersect(set).Count() / Math.Max(1, s.Union(set).Count()) > 0.72)) continue;
-            chosen.Add(item.Hit); fingerprints.Add(set); if (chosen.Count == 3) break;
+            chosen.Add(item.Hit); fingerprints.Add(set); if (chosen.Count == 8) break;
         }
         return chosen;
     }
