@@ -13,6 +13,7 @@ public sealed class TavernPromptBuilder(Uk resources, BotOptions options, ILogge
 {
     public string FirstMessage => resources.Tavern.Character.FirstMessage;
     public int ExampleReserve => resources.Tavern.ExampleReserve;
+    public int InstructionReserve => resources.Tavern.InstructionReserve;
     public int InputLimit => Math.Min(options.InputBudget,
         Math.Min(options.TokensPerMinute, options.TokensPerDay) - options.TurnOutputBudget);
 
@@ -36,9 +37,8 @@ public sealed class TavernPromptBuilder(Uk resources, BotOptions options, ILogge
             var collection = new MessageCollection(entry.Identifier);
             if (entry.Identifier is not ("chatHistory" or "dialogueExamples"))
             {
-                var prompt = config.Preset.Prompts.Single(x => x.Identifier == entry.Identifier);
-                collection.Collection.Add(new(entry.Identifier, new(prompt.Role,
-                    config.Prepare(entry.Identifier, worldBefore, worldAfter))));
+                collection.Collection.Add(new(entry.Identifier,
+                    config.CreateInstruction(entry.Identifier, worldBefore, worldAfter)));
             }
             completion.Add(collection, i);
         }
@@ -50,14 +50,18 @@ public sealed class TavernPromptBuilder(Uk resources, BotOptions options, ILogge
         completion.FreeBudget(newChat);
         completion.Insert(newChat, "chatHistory", atStart: true);
 
-        // GPT-OSS renders only the first system/developer block. Named ST
-        // examples are already prefixed as in its mergeMessages converter.
+        // Merge initial instructions/examples for GPT-OSS. PHI uses ST's
+        // user-role fallback, retaining its actual post-history position.
         var messages = GroqMessageLayout.Prepare(completion.GetChat());
-        if (messages[^1] != history[^1] || TokenEstimate.Count(messages) > InputLimit)
+        var realHistory = messages.Where(m => m.Role is "user" or "assistant" && !m.IsApplicationPrompt).ToArray();
+        var hasTail = messages[^1].IsApplicationPrompt;
+        if (realHistory.Length == 0 || realHistory[^1] != history[^1] || TokenEstimate.Count(messages) > InputLimit)
             throw new ContextTooLargeException();
         log.LogInformation("SillyTavern prompt; upstream {Version}; history {History}; example blocks {Examples}; " +
-            "memory blocks {Memory}; reference blocks {References}; estimated tokens {Tokens}; current preserved True",
-            "1.19.0", historyCount, exampleCount, memory.Count, references.Count, TokenEstimate.Count(messages));
+            "examples available {Available}; memory blocks {Memory}; reference blocks {References}; " +
+            "post-history instruction {Tail}; estimated tokens {Tokens}; current preserved True",
+            "1.19.0", historyCount, exampleCount, config.Examples.Count, memory.Count, references.Count,
+            hasTail, TokenEstimate.Count(messages));
         return messages;
 
         void PopulateHistory()
@@ -81,11 +85,11 @@ public sealed class TavernPromptBuilder(Uk resources, BotOptions options, ILogge
             var used = 0;
             foreach (var block in config.Examples)
             {
-                var items = new[] { new TavernMessage("newChat", new AiMessage("system", config.Preset.NewExampleChatPrompt)) }
+                var items = new[] { new TavernMessage("newChat", new AiMessage("system", config.Expand(config.Preset.NewExampleChatPrompt))) }
                     .Concat(block.Select((x, i) => new TavernMessage($"dialogueExamples-{exampleCount}-{i}",
                         new AiMessage("system", x.Speaker + ": " + x.Content)))).ToArray();
                 var cost = items.Sum(x => x.Tokens);
-                if (used + cost > 600 || !completion.CanAffordAll(items)) break;
+                if (used + cost > TavernConfiguration.ExampleTokenBudget || !completion.CanAffordAll(items)) break;
                 foreach (var item in items) completion.Insert(item, "dialogueExamples");
                 used += cost;
                 exampleCount++;

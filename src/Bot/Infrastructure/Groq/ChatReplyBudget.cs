@@ -10,7 +10,7 @@ public static class ChatReplyBudget
 
     public static bool WantsDetail(IReadOnlyList<AiMessage> messages)
     {
-        var latest = messages.LastOrDefault(m => m.Role == "user")?.Content ?? "";
+        var latest = messages.LastOrDefault(m => m.Role == "user" && !m.IsApplicationPrompt)?.Content ?? "";
         if (Regex.IsMatch(latest, @"(?i)(?<!\p{L})(коротко|стисло|briefly)(?!\p{L})|не\s+(пиши\s+)?(детально|докладно|розгорнуто)",
                 RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100))) return false;
         return Regex.IsMatch(latest,

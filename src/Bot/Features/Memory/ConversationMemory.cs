@@ -96,20 +96,18 @@ public sealed class ConversationMemory(
             CuriosityCatalog.WantsReference(userMessage.Content, priorSources.Any(s => s.Type == "fact")) ? 650 : 0;
         // ST allocates mandatory definitions before history and then fits whole
         // example blocks. Keep their room and its new-chat marker available.
-        var budget = InputLimit - referenceReserve - uk.Tavern.ExampleReserve - 120;
+        var budget = InputLimit - referenceReserve - uk.Tavern.ExampleReserve - uk.Tavern.InstructionReserve;
         var core = new AiMessage("system", uk.ChatPrompt);
         if (TokenEstimate.Count([core, userMessage]) > budget) throw new ContextTooLargeException();
         var messages = new List<AiMessage> { core };
-        var threadNote = new AiMessage("system", ConversationThread.Prompt(thread));
-        var hasThread = thread.Length > 0 && TokenEstimate.Count(messages.Append(threadNote).Append(userMessage)) <= budget;
-        if (hasThread) messages.Add(threadNote);
         var groups = previous.GroupBy(x => x.ReplyToId ?? x.Id)
             .OrderByDescending(x => x.Key)
             .Select(x => x.OrderBy(m => m.Role == "assistant" ? 1 : 0).ToList())
             .Where(x => x.Count > 0 && x[0].Role == "user").ToList();
         var history = new List<AiMessage>();
+        var threadCoveredByHistory = false;
         var hasMood = priorAssistant?.MoodDerived == true &&
-            (hasThread || priorSources.Count > 0 || needsBooks);
+            (priorSources.Count > 0 || needsBooks);
         foreach (var group in groups)
         {
             var candidate = group.Select(ToMessage).Concat(history).ToList();
@@ -123,13 +121,22 @@ public sealed class ConversationMemory(
                     history = group.Select(m => new AiMessage(m.Role,
                         TrimToTokenBudget(ToMessage(m).Content, perMessage) +
                         "\n[Попереднє довге повідомлення скорочено для контексту.]")).ToList();
+                    threadCoveredByHistory |= group.Any(m => m.Id == priorAssistant?.Id);
                     hasMood |= group.Any(m => m.MoodDerived);
                 }
                 break;
             }
             history = candidate;
+            threadCoveredByHistory |= group.Any(m => m.Id == priorAssistant?.Id);
             hasMood |= group.Any(m => m.MoodDerived);
         }
+
+        // Read and persist ConversationState as before, including for source
+        // continuation. When its exchange is already in literal history, do
+        // not repeat the bot's previous words as higher-priority instructions.
+        var hasThread = thread.Length > 0 && !threadCoveredByHistory &&
+            TryAdd(new("system", ConversationThread.Prompt(thread)));
+        if (hasThread) hasMood |= priorAssistant?.MoodDerived == true;
 
         var styleDelta = ChatStyleProfile.ExplicitDelta(userMessage.Content);
         var style = ChatStyleProfile.Prompt(ChatStyleProfile.Apply(user.ChatStyleProfile, styleDelta));
@@ -169,10 +176,12 @@ public sealed class ConversationMemory(
         log.LogInformation("Chat context {Operation}; current chars {Chars}; history items {HistoryItems}; " +
             "history loaded {Loaded}; system blocks {SystemBlocks}; style profile {HasStyle}; " +
             "summary present {HasSummary}; memory episodes {Episodes}; mood included {HasMood}; " +
-            "reference reserve {BookReserve}; thread present {HasThread}; examples 0; current preserved {CurrentPreserved}",
+            "reference reserve {BookReserve}; thread available {HasState}; thread injected {HasThread}; " +
+            "thread covered by history {ThreadCovered}; examples 0; current preserved {CurrentPreserved}",
             current.Id, userMessage.Content.Length, history.Count, previous.Count,
             messages.Count(m => m.Role == "system"), hasStyle, hasSummary,
-            memoryIncluded ? memories.Episodes : 0, hasMood, referenceReserve, hasThread,
+            memoryIncluded ? memories.Episodes : 0, hasMood, referenceReserve, thread.Length > 0, hasThread,
+            threadCoveredByHistory,
             messages[^1] == userMessage);
         return new(messages, hasMood)
         {

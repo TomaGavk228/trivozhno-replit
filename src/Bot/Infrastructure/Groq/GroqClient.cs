@@ -94,7 +94,8 @@ public sealed partial class GroqClient(
                     model, payload.GetValueOrDefault("reasoning_effort") ?? "default",
                     completionTokens,
                     string.Join(',', messages.Select(m => m.Role)),
-                    messages.LastOrDefault(m => m.Role == "user")?.Content.Length ?? 0, structuredTurn ? "json" : "text");
+                    messages.LastOrDefault(m => m.Role == "user" && !m.IsApplicationPrompt)?.Content.Length ?? 0,
+                    structuredTurn ? "json" : "text");
 
                 var network = Stopwatch.StartNew();
                 using var response = await http.SendAsync(req, timeout.Token);

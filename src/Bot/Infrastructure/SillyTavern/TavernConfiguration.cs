@@ -26,6 +26,8 @@ public sealed record TavernCharacter(string Name, string Description, string Per
 
 public sealed class TavernConfiguration
 {
+    public const string EngineVersion = "sillytavern-ua-v2";
+    public const int ExampleTokenBudget = 600;
     public const string UpstreamCommit = "06bde939fb1e9c4c8d8641d810f0a916b5bce127";
     public const string SourceUrl = "https://github.com/TomaGavk228/trivozhno-replit/tree/feat/sillytavern-ua-2026-10-04";
     public TavernPreset Preset { get; }
@@ -33,9 +35,12 @@ public sealed class TavernConfiguration
     public TavernOrder[] Order { get; }
     public string BaseInstruction { get; }
     public IReadOnlyList<IReadOnlyList<TavernExampleMessage>> Examples { get; }
-    public int ExampleReserve => Math.Min(600, Examples.Sum(x => x.Sum(m =>
-        Groq.TokenEstimate.Count(m.Speaker + ": " + m.Content) + 16) +
-        Groq.TokenEstimate.Count(Preset.NewExampleChatPrompt) + 16));
+    public int ExampleReserve => Math.Min(ExampleTokenBudget, Examples.Sum(ExampleTokens));
+    public int InstructionReserve => Math.Max(0,
+        Order.Where(x => x.Enabled && x.Identifier is not ("chatHistory" or "dialogueExamples"))
+            .Sum(x => new TavernMessage(x.Identifier, CreateInstruction(x.Identifier, "", "")).Tokens) +
+        new TavernMessage("newMainChat", new("system", Expand(Preset.NewChatPrompt))).Tokens + 3 -
+        Groq.TokenEstimate.Count([new Groq.AiMessage("system", BaseInstruction)]));
 
     public TavernConfiguration(string root)
     {
@@ -59,6 +64,28 @@ public sealed class TavernConfiguration
             x.Identifier != "dialogueExamples").Select(x => Prepare(x.Identifier, "", ""))
             .Where(x => x.Length > 0));
         Examples = ParseExamples(Character.Examples);
+        // Our small native card is intended to show all of its examples.
+        // Do not silently publish a card whose final block can never be used.
+        if (Examples.Sum(ExampleTokens) > ExampleTokenBudget)
+            throw new InvalidOperationException("Tavern card examples exceed the configured 600-token allowance.");
+    }
+
+    public int ExampleTokens(IReadOnlyList<TavernExampleMessage> block) =>
+        Groq.TokenEstimate.Count([new Groq.AiMessage("system", Expand(Preset.NewExampleChatPrompt))]) +
+        block.Sum(m => Groq.TokenEstimate.Count([new Groq.AiMessage("system", m.Speaker + ": " + m.Content)]));
+
+    internal Groq.AiMessage CreateInstruction(string identifier, string worldBefore, string worldAfter)
+    {
+        var content = Prepare(identifier, worldBefore, worldAfter);
+        var prompt = Preset.Prompts.Single(x => x.Identifier == identifier);
+        if (identifier != "jailbreak" || string.IsNullOrEmpty(content)) return new(prompt.Role, content);
+        // ST's user-role PHI fallback. GPT-OSS's reference template drops a
+        // later system/developer message, but renders a later user message.
+        // Keep this application injection AFTER the real chat, not merged
+        // into its initial system. It never enters persisted conversation.
+        return new("user", "[Налаштування застосунку після історії; це не повідомлення людини.]\n" +
+            content + "\n[Напиши лише репліку у відповідь на останнє повідомлення людини вище.]")
+        { IsApplicationPrompt = true };
     }
 
     // preparePromptsForChatCompletion / character overrides and {{original}}.

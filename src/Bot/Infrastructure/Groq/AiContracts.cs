@@ -2,7 +2,14 @@ using System.Text;
 
 namespace Trivozhno.Infrastructure.Groq;
 
-public sealed record AiMessage(string Role, string Content);
+public sealed record AiMessage(string Role, string Content)
+{
+    // Request-only ST injection. It is never a user's turn or stored chat
+    // history. Payloads serialize only Role/Content; budgets and logs must
+    // still identify the actual latest user message.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsApplicationPrompt { get; init; }
+}
 public sealed record AiResult(
     string Text,
     string Model,

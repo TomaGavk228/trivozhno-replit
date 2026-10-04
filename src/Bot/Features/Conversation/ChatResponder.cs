@@ -157,13 +157,13 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         { log.LogWarning("Reply observations unavailable: {Category}", e.GetType().Name); }
         var state = ConversationThread.FromExchange(currentText, text, context.ConversationState,
             bookRequest?.Query, context.ExplicitStyleDelta);
-        log.LogInformation("Friend exchange; version sillytavern-ua-v1; format text; thread prepared {Thread}; facts available {Facts}; references used {Sources}",
-            state.Length > 0, facts?.Items.Length ?? 0, sources.Count);
+        log.LogInformation("Friend exchange; version {Version}; format text; thread prepared {Thread}; facts available {Facts}; references used {Sources}",
+            TavernConfiguration.EngineVersion, state.Length > 0, facts?.Items.Length ?? 0, sources.Count);
         return new(final, sources) { ConversationState = state };
 
         int Remaining()
         {
-            return builder.InputLimit - TokenEstimate.Count(messages) - builder.ExampleReserve - 120 -
+            return builder.InputLimit - TokenEstimate.Count(messages) - builder.ExampleReserve - builder.InstructionReserve -
                 references.Sum(x => TokenEstimate.Count([new AiMessage("system", x)]));
         }
         bool Add(string text)

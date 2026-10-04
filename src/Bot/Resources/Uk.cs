@@ -25,9 +25,9 @@ public sealed class Uk
 
         Console.WriteLine(
             $"[PROMPT] File={Path.Combine(root, "Conversation", "sillytavern-ua.json")} " +
-            $"Character={characterPath} Engine=sillytavern-ua-v1 Format=text " +
+            $"Character={characterPath} Engine={TavernConfiguration.EngineVersion} Format=text " +
             $"Upstream=1.19.0 Commit={TavernConfiguration.UpstreamCommit} " +
-            $"Chars={ChatPrompt.Length} " +
+            $"Examples={Tavern.Examples.Count} ExampleTokens={Tavern.ExampleReserve} Chars={ChatPrompt.Length} " +
             $"SHA256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ChatPrompt)))}");
     }
 
