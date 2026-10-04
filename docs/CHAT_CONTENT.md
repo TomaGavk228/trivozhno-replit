@@ -53,8 +53,8 @@
 Зупини Run. У Shell:
 
 ```bash
-git fetch origin feat/friend-dialogue-2026-10-04:refs/remotes/origin/feat/friend-dialogue-2026-10-04
-git switch --track origin/feat/friend-dialogue-2026-10-04
+git fetch origin feat/friend-dialogue-2026-10-04
+git switch -c feat/friend-dialogue-2026-10-04 FETCH_HEAD
 ```
 
 Якщо локальна гілка вже створена, перемкни її через `git switch feat/friend-dialogue-2026-10-04`. Незакомічені зміни зберігай звичайним Git-процесом; команди не містять примусового скидання.
