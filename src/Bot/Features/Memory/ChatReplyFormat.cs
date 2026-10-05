@@ -41,7 +41,9 @@ public static class ChatReplyFormat
         }
         """).RootElement.Clone();
 
-    public static object ResponseFormat(string model) => model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal)
+    public static object ResponseFormat(string model) =>
+        model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal) ||
+        string.Equals(model, "qwen/qwen3.8-27b", StringComparison.Ordinal)
         ? new { type = "json_schema", json_schema = new { name = "friend_chat", strict = true, schema = Schema } }
         : (object)new { type = "json_object" };
 
