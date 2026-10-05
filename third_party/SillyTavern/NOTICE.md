@@ -1,3 +1,10 @@
+# Historical SillyTavern attribution
+
+The SillyTavern-derived adapter and preset were removed on the
+`feat/chat-reset-2026-10-05` branch. The project's AGPL-3.0 license is retained.
+The notice below records attribution for the earlier implementation in Git
+history; its file paths and behavior do not describe the current chat core.
+
 # SillyTavern source adaptation
 
 Upstream: https://github.com/SillyTavern/SillyTavern

@@ -2,14 +2,7 @@ using System.Text;
 
 namespace Trivozhno.Infrastructure.Groq;
 
-public sealed record AiMessage(string Role, string Content)
-{
-    // Request-only ST injection. It is never a user's turn or stored chat
-    // history. Payloads serialize only Role/Content; budgets and logs must
-    // still identify the actual latest user message.
-    [System.Text.Json.Serialization.JsonIgnore]
-    public bool IsApplicationPrompt { get; init; }
-}
+public sealed record AiMessage(string Role, string Content);
 public sealed record AiResult(
     string Text,
     string Model,
@@ -18,30 +11,10 @@ public sealed record AiResult(
     int CompletionTokens = 0,
     int ReasoningTokens = 0,
     int CachedTokens = 0);
-public sealed record AiTurnDraft(
-    string ConversationState,
-    string KnowledgeQuery,
-    IReadOnlyList<string> ProfileDelta,
-    string Reply)
-{
-    public IReadOnlyList<string> SourceIds { get; init; } = [];
-}
-public sealed record AiTurnResult(AiTurnDraft Turn, string Model, int Tokens)
-{
-    public AiResult? Usage { get; init; }
-}
 public interface IAiClient
 {
-    Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, bool summary, CancellationToken ct);
-    Task<AiResult> CompleteWithModel(
-        IReadOnlyList<AiMessage> messages,
-        string model,
-        double temperature,
-        CancellationToken ct);
-    Task<AiTurnResult> CompleteTurn(IReadOnlyList<AiMessage> messages, CancellationToken ct);
-    // Source metadata only; no generated memory or dialogue planner.
-    Task<AiResult> CompleteBook(IReadOnlyList<AiMessage> messages, CancellationToken ct) =>
-        Complete(messages, false, ct);
+    Task<AiResult> Complete(IReadOnlyList<AiMessage> messages,
+        Trivozhno.Features.Conversation.ChatGenerationSettings settings, CancellationToken ct);
 }
 public sealed class AiUnavailableException(string reason = "unavailable") : Exception(reason)
 {

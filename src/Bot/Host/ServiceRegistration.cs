@@ -1,14 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Trivozhno.Features.Confessions;
 using Trivozhno.Features.Conversation;
-using Trivozhno.Features.Memory;
 using Trivozhno.Features.Mood;
 using Trivozhno.Features.Navigation;
 using Trivozhno.Features.Reminders;
 using Trivozhno.Features.Settings;
-using Trivozhno.Features.Recommendations;
 using Trivozhno.Infrastructure.Groq;
-using Trivozhno.Infrastructure.SillyTavern;
 using Trivozhno.Infrastructure.Knowledge;
 using Trivozhno.Infrastructure.Persistence;
 using Trivozhno.Infrastructure.Telegram;
@@ -27,12 +24,9 @@ public static class ServiceRegistration
         services.AddLogging(b => { b.AddFilter("System.Net.Http.HttpClient", LogLevel.None); b.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.None); });
         services.AddHttpClient<ITelegramClient, TelegramClient>(c => c.Timeout = TimeSpan.FromSeconds(40)).RemoveAllLoggers();
         services.AddHttpClient<IAiClient, GroqClient>(c => c.Timeout = Timeout.InfiniteTimeSpan).RemoveAllLoggers();
-        services.AddScoped<IKnowledgeRetriever, KnowledgeRetriever>(); services.AddScoped<IConversationMemory, ConversationMemory>();
-        services.AddScoped<MemoryRetriever>();
-        services.AddSingleton<DialogueExamples>(); services.AddSingleton<MovieCatalog>();
-        services.AddSingleton<CuriosityCatalog>();
-        services.AddSingleton<ReplyDiagnostics>();
-        services.AddSingleton<TavernPromptBuilder>();
+        // Deterministic book search remains an operator utility, not chat context.
+        services.AddScoped<IKnowledgeRetriever, KnowledgeRetriever>();
+        services.AddSingleton<ChatConfiguration>(); services.AddScoped<ChatHistory>();
         services.AddScoped<ChatResponder>();
         services.AddScoped<BookImporter>(); services.AddScoped<Ui>(); services.AddScoped<DraftStore>(); services.AddScoped<Router>();
         services.AddScoped<ConversationHandler>(); services.AddScoped<ConfessionHandler>(); services.AddScoped<MoodHandler>();

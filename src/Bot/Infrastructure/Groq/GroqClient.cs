@@ -1,308 +1,116 @@
-using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Trivozhno.Features.Conversation;
 using Trivozhno.Host;
-using Trivozhno.Resources;
 
 namespace Trivozhno.Infrastructure.Groq;
 
-public sealed partial class GroqClient(
-    HttpClient http,
-    BotOptions options,
-    AiQuota quota,
-    ILogger<GroqClient> log,
-    Uk? resources = null) : IAiClient
+// Plain chat completion. Retries are for HTTP 429/5xx only, on the same model.
+public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quota, ILogger<GroqClient> log) : IAiClient
 {
-    private async Task<AiResult> CompleteRaw(
-        IReadOnlyList<AiMessage> messages,
-        bool summary,
-        bool structuredTurn,
-        CancellationToken ct,
-        string? forcedModel = null,
-        double? forcedTemperature = null,
-        bool exactModel = false,
-        bool bookReply = false)
+    public async Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, ChatGenerationSettings settings, CancellationToken ct)
     {
-        // Normalize before quota accounting, payload generation and request logs.
-        // Payload builders also normalize for direct callers; Prepare is idempotent.
-        var originalInstructionBlocks = messages.Count(m => m.Role is "system" or "developer");
-        messages = GroqMessageLayout.Prepare(messages);
-        var systemContent = messages.FirstOrDefault(m => m.Role == "system")?.Content ?? "";
-        var systemSha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-            System.Text.Encoding.UTF8.GetBytes(systemContent)))[..12];
-        log.LogInformation("Groq layout; instruction blocks {Before} -> {After}; instruction chars {Chars}; system SHA {SystemSha}; last role {LastRole}",
-            originalInstructionBlocks, messages.Count(m => m.Role == "system"),
-            systemContent.Length, systemSha,
-            messages.LastOrDefault()?.Role ?? "none");
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
         budget.CancelAfter(TimeSpan.FromSeconds(options.JobBudget));
         var token = budget.Token;
-        var model = forcedModel ?? (summary ? options.SummaryModel : options.Model);
-        var schemaReserve = bookReply ? BookSchemaReserve : structuredTurn ? TurnSchemaReserve : 0;
-        var briefChat = !summary && !structuredTurn && !bookReply && !ChatReplyBudget.WantsDetail(messages);
-        var completionTokens = 0;
-        var lengthRetried = false;
-        var extraCompletionTokens = 0;
-
-        var admission = Stopwatch.StartNew();
         using var slot = await quota.Enter(token);
-        log.LogInformation("Groq slot wait {ElapsedMs} ms", admission.ElapsedMilliseconds);
-        var maxAttempts = exactModel ? 1 : 3;
-        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        var estimate = TokenEstimate.Count(messages);
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            if (!exactModel && attempt == 2) model = options.FallbackModel;
-
-            var effort = ResolveReasoningEffort(model, summary, options.ChatReasoningEffort);
-            var reasoning = effort is "low" or "medium" or "high";
-            completionTokens = summary ? SummaryCompletionTokens : structuredTurn || bookReply ? options.TurnOutputBudget :
-                ChatReplyBudget.Limit(messages, options.TurnOutputBudget, effort);
-            completionTokens += extraCompletionTokens;
-
-            admission.Restart();
-            var inputEstimate = TokenEstimate.Count(messages) + schemaReserve;
-            var reservation = await quota.Reserve(
-                model,
-                inputEstimate + completionTokens,
-                summary,
-                token,
-                inputEstimate);
-
-            log.LogInformation("Groq quota admission {ElapsedMs} ms", admission.ElapsedMilliseconds);
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-            timeout.CancelAfter(TimeSpan.FromSeconds(options.AiTimeout));
-
+            var reservation = await quota.Reserve(settings.Model, estimate + settings.MaxCompletionTokens, false, token, estimate);
+            var settled = false;
             try
             {
-                using var req = new HttpRequestMessage(
-                    HttpMethod.Post,
-                    "https://api.groq.com/openai/v1/chat/completions");
-                req.Headers.Authorization =
-                    new AuthenticationHeaderValue("Bearer", options.GroqKey);
-                var payload = structuredTurn
-                    ? TurnPayload(model, messages, completionTokens, options.ChatReasoningEffort)
-                    : Payload(model, messages, summary, options.ChatReasoningEffort);
-                payload["max_completion_tokens"] = completionTokens;
-                if (!summary && !structuredTurn)
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+                timeout.CancelAfter(TimeSpan.FromSeconds(options.AiTimeout));
+                var payload = new Dictionary<string, object?>
                 {
-                    payload["temperature"] = resources?.Tavern.Preset.Temperature ?? 1;
-                    payload["top_p"] = resources?.Tavern.Preset.TopP ?? 1;
-                }
-                if (bookReply) payload["response_format"] = BookResponseFormat;
-                if (forcedTemperature is not null) payload["temperature"] = forcedTemperature.Value;
-                req.Content = JsonContent.Create(payload);
-                log.LogInformation("Groq request; model {Model}; reasoning {Effort}; output budget {Budget}; roles {Roles}; last user chars {UserChars}; format {Format}",
-                    model, payload.GetValueOrDefault("reasoning_effort") ?? "default",
-                    completionTokens,
-                    string.Join(',', messages.Select(m => m.Role)),
-                    messages.LastOrDefault(m => m.Role == "user" && !m.IsApplicationPrompt)?.Content.Length ?? 0,
-                    bookReply ? "book_reply" : structuredTurn ? "json" : "text");
-
-                var network = Stopwatch.StartNew();
-                using var response = await http.SendAsync(req, timeout.Token);
-                log.LogInformation("Groq HTTP {Status}; model {Model}; elapsed {ElapsedMs} ms", (int)response.StatusCode, model, network.ElapsedMilliseconds);
-                LogRateHeaders(response, model);
-                var rateSnapshot = GroqRateSnapshot.Read(response.Headers);
-
-                if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                    ["model"] = settings.Model,
+                    ["messages"] = messages.Select(m => new { role = m.Role, content = m.Content }).ToArray(),
+                    ["temperature"] = settings.Temperature,
+                    ["top_p"] = settings.TopP,
+                    ["max_completion_tokens"] = settings.MaxCompletionTokens,
+                    ["stream"] = false
+                };
+                if (settings.ReasoningEffort is not null)
                 {
-                    await quota.Reconcile(reservation, new("", model, 0), token, rateSnapshot);
-                    if (response.StatusCode == HttpStatusCode.Unauthorized)
-                        throw new AiUnavailableException("authentication");
-                    var reason = "permission_denied";
-                    try
-                    {
-                        using var denied = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
-                        if (denied.RootElement.ValueKind == JsonValueKind.Object &&
-                            denied.RootElement.TryGetProperty("error", out var error) &&
-                            error.ValueKind == JsonValueKind.Object && error.TryGetProperty("code", out var code) &&
-                            code.ValueKind == JsonValueKind.String)
-                            reason = code.GetString() switch
-                            {
-                                "model_permission_blocked_org" => "model_permission_blocked_org",
-                                "model_permission_blocked_project" => "model_permission_blocked_project",
-                                _ => "permission_denied"
-                            };
-                    }
-                    catch (JsonException) { /* A non-JSON 403 is still an access denial. */ }
-                    log.LogWarning("Groq access denied; model {Model}; reason {Reason}", model, reason);
-                    // Do not retry another model to work around a permission denial.
-                    throw new AiUnavailableException(reason);
+                    payload["reasoning_effort"] = settings.ReasoningEffort;
+                    if (settings.Model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal))
+                        payload["include_reasoning"] = false;
+                    else payload["reasoning_format"] = "hidden";
                 }
-
+                using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.GroqKey);
+                request.Content = JsonContent.Create(payload);
+                log.LogInformation("Groq text request; model {Model}; reasoning {Effort}; input estimate {Input}; output ceiling {Output}; attempt {Attempt}",
+                    settings.Model, settings.ReasoningEffort ?? "default", estimate, settings.MaxCompletionTokens, attempt + 1);
+                using var response = await http.SendAsync(request, timeout.Token);
+                log.LogInformation("Groq HTTP {Status}; model {Model}", (int)response.StatusCode, settings.Model);
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 {
-                    var retry =
-                        response.Headers.RetryAfter?.Delta ??
-                        (response.Headers.RetryAfter?.Date - DateTimeOffset.UtcNow) ??
-                        TimeSpan.FromSeconds(5);
-                    await quota.BackOff(model, retry, token);
-                    await quota.Reconcile(reservation, new("", model, 0), token, rateSnapshot);
-                    log.LogWarning("Groq rate limited; model {Model}", model);
+                    await quota.Release(reservation, token);
+                    settled = true;
+                    var retry = response.Headers.RetryAfter?.Delta ??
+                        (response.Headers.RetryAfter?.Date is { } at ? at - DateTimeOffset.UtcNow : TimeSpan.FromSeconds(2));
+                    retry = TimeSpan.FromSeconds(Math.Clamp(retry.TotalSeconds, 1, options.JobBudget));
+                    await quota.BackOff(settings.Model, retry, token);
+                    if (attempt == 2) throw new AiUnavailableException("rate_limit");
                     continue;
                 }
-
-                if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound)
-                {
-                    var body = await response.Content.ReadAsStringAsync(timeout.Token);
-                    using var error = JsonDocument.Parse(body);
-                    var code =
-                        error.RootElement.TryGetProperty("error", out var e) &&
-                        e.TryGetProperty("code", out var c)
-                            ? c.GetString()
-                            : "";
-
-                    // Validation failures may have generated billable tokens. Use reported
-                    // usage when present, otherwise keep the conservative reservation.
-                    if (code == "json_validate_failed")
-                    {
-                        var used = ParseUsage(error.RootElement, "", model);
-                        if (used.Tokens > 0) await quota.Reconcile(reservation, used, token, rateSnapshot);
-                        log.LogWarning("Groq rejected generated JSON; model {Model}", model);
-                        throw new AiUnavailableException("json_validate_failed");
-                    }
-                    await quota.Reconcile(reservation, new("", model, 0), token, rateSnapshot);
-                    if (code is "model_not_found" or "model_decommissioned" or "model_not_supported" ||
-                        response.StatusCode == HttpStatusCode.NotFound)
-                    {
-                        if (!exactModel && attempt < 2 && model != options.FallbackModel)
-                        {
-                            attempt = 1;
-                            continue;
-                        }
-                    }
-                    throw new AiUnavailableException("request_rejected");
-                }
-
                 if ((int)response.StatusCode >= 500)
                 {
-                    // A server failure can occur after inference; do not erase unknown usage.
-                    await Task.Delay(
-                        500 * (attempt + 1) + Random.Shared.Next(250),
-                        token);
+                    // Provider failure may have consumed tokens; keep its estimate.
+                    await quota.Abandon(reservation);
+                    settled = true;
+                    if (attempt == 2) throw new AiUnavailableException("provider_unavailable");
+                    await Task.Delay(TimeSpan.FromSeconds(attempt + 1), token);
                     continue;
                 }
-
                 if (!response.IsSuccessStatusCode)
-                    throw new AiUnavailableException("http_error");
-
-                using var data = JsonDocument.Parse(
-                    await response.Content.ReadAsStringAsync(timeout.Token));
-                var choice = data.RootElement.GetProperty("choices")[0];
-                var text = Clean(
-                    choice.GetProperty("message")
-                        .GetProperty("content")
-                        .GetString() ?? "");
-
-                var usage = ParseUsage(data.RootElement, text, model);
-                if (usage.Tokens > 0) await quota.Reconcile(reservation, usage, token, rateSnapshot);
-                var finishReason = choice.TryGetProperty("finish_reason", out var finish)
-                    ? finish.GetString() : null;
-                if (finishReason == "length")
                 {
-                    if (briefChat && !reasoning && !lengthRetried && attempt + 1 < maxAttempts)
+                    await quota.Release(reservation, token);
+                    settled = true;
+                    throw new AiUnavailableException(response.StatusCode switch
                     {
-                        // Retry only an unfinished response, once, with the SAME allowance.
-                        // Never turn a short advice request into a larger generation.
-                        lengthRetried = true;
-                        messages = ChatReplyBudget.CompactRetry(messages);
-                        log.LogWarning("Incomplete brief reply; compact retry with unchanged budget {Budget}", completionTokens);
-                        continue;
-                    }
-                    var room = Math.Min(options.TokensPerMinute, options.TokensPerDay) -
-                        TokenEstimate.Count(messages) - schemaReserve;
-                    var larger = Math.Min(3600, Math.Min(room, completionTokens + 1200));
-                    if (!summary && (!briefChat || reasoning) && !lengthRetried && attempt + 1 < maxAttempts && larger > completionTokens)
-                    {
-                        // Regenerate from the same conversation, never send partial JSON/text.
-                        // Normal successful turns still use a single generation.
-                        lengthRetried = true;
-                        extraCompletionTokens = larger - completionTokens;
-                        if (briefChat) messages = ChatReplyBudget.CompactRetry(messages);
-                        log.LogWarning("Incomplete Groq turn; retrying once with budget {Budget}; reasoning {Reasoning}", larger, effort);
-                        continue;
-                    }
-                    throw new AiUnavailableException("output_truncated");
+                        HttpStatusCode.Unauthorized => "authentication",
+                        HttpStatusCode.Forbidden => "permission_denied",
+                        _ => "request_rejected"
+                    });
                 }
-                if (finishReason != "stop" || string.IsNullOrWhiteSpace(text))
-                    throw new AiUnavailableException("empty_or_unfinished_output");
-
-                log.LogInformation(
-                    "Groq response; model {Model}; total {Total}; prompt {Prompt}; completion {Completion}; reasoning {Reasoning}; cached {Cached}; summary {Summary}; structuredTurn {StructuredTurn}",
-                    model,
-                    usage.Tokens,
-                    usage.PromptTokens,
-                    usage.CompletionTokens,
-                    usage.ReasoningTokens,
-                    usage.CachedTokens,
-                    summary,
-                    structuredTurn);
-                return usage;
-            }
-            catch (Exception e) when (
-                e is HttpRequestException ||
-                e is TaskCanceledException && !token.IsCancellationRequested)
-            {
-                log.LogWarning("Groq transport failure; attempt {Attempt}; category {Category}", attempt + 1, e.GetType().Name);
-                await Task.Delay(500 + Random.Shared.Next(400), token);
-            }
-            catch (JsonException)
-            {
-                throw new AiUnavailableException("invalid_response_json");
+                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
+                var root = json.RootElement;
+                int Count(JsonElement value, string name) => value.ValueKind == JsonValueKind.Object &&
+                    value.TryGetProperty(name, out var n) && n.TryGetInt32(out var count) ? Math.Max(0, count) : 0;
+                var hasUsage = root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object;
+                var prompt = hasUsage ? Count(usage, "prompt_tokens") : 0;
+                var completion = hasUsage ? Count(usage, "completion_tokens") : 0;
+                var total = hasUsage ? Count(usage, "total_tokens") : estimate + settings.MaxCompletionTokens;
+                var reasoning = hasUsage && usage.TryGetProperty("completion_tokens_details", out var outputDetails)
+                    ? Count(outputDetails, "reasoning_tokens") : 0;
+                var cached = hasUsage && usage.TryGetProperty("prompt_tokens_details", out var inputDetails)
+                    ? Count(inputDetails, "cached_tokens") : 0;
+                var result = new AiResult("", settings.Model, total, prompt, completion, reasoning, cached);
+                if (hasUsage) await quota.Reconcile(reservation, result, token, GroqRateSnapshot.Read(response.Headers));
+                else await quota.Abandon(reservation);
+                settled = true;
+                var choice = root.GetProperty("choices")[0];
+                if (choice.GetProperty("finish_reason").GetString() != "stop")
+                    throw new AiUnavailableException("incomplete_response");
+                var content = choice.GetProperty("message").GetProperty("content").GetString()?.Trim();
+                if (string.IsNullOrWhiteSpace(content) || content.Contains("<think>", StringComparison.OrdinalIgnoreCase))
+                    throw new AiUnavailableException("invalid_response");
+                log.LogInformation("Groq text response; model {Model}; prompt {Prompt}; completion {Completion}; reasoning {Reasoning}; cached {Cached}",
+                    settings.Model, prompt, completion, reasoning, cached);
+                return result with { Text = content };
             }
             finally
             {
-                // Reconciled requests are already removed. Failed/cancelled calls
-                // retain conservative usage, but must not become permanent holds.
-                await quota.Abandon(reservation);
+                // Timeout/cancellation is not evidence that the provider did no work.
+                if (!settled) await quota.Abandon(reservation);
             }
         }
-
-        throw new AiUnavailableException("retries_exhausted");
-    }
-
-    private static AiResult ParseUsage(JsonElement root, string text, string model)
-    {
-        if (!root.TryGetProperty("usage", out var usage))
-            return new(text, model, 0);
-
-        var total = ReadInt(usage, "total_tokens");
-        var prompt = ReadInt(usage, "prompt_tokens");
-        var completion = ReadInt(usage, "completion_tokens");
-        var reasoning = 0;
-        var cached = 0;
-
-        if (usage.TryGetProperty("completion_tokens_details", out var completionDetails))
-            reasoning = ReadInt(completionDetails, "reasoning_tokens");
-        if (usage.TryGetProperty("prompt_tokens_details", out var promptDetails))
-            cached = ReadInt(promptDetails, "cached_tokens");
-
-        return new(text, model, total, prompt, completion, reasoning, cached);
-    }
-
-    private static int ReadInt(JsonElement element, string property) =>
-        element.TryGetProperty(property, out var value) && value.TryGetInt32(out var result)
-            ? result
-            : 0;
-
-    private void LogRateHeaders(HttpResponseMessage response, string model)
-    {
-        string? Header(string name) =>
-            response.Headers.TryGetValues(name, out var values)
-                ? values.FirstOrDefault()
-                : null;
-
-        var remainingTokens = Header("x-ratelimit-remaining-tokens");
-        var resetTokens = Header("x-ratelimit-reset-tokens");
-        var remainingRequests = Header("x-ratelimit-remaining-requests");
-
-        if (remainingTokens is not null || remainingRequests is not null)
-            log.LogInformation(
-                "Groq limits; model {Model}; remainingTokens {RemainingTokens}; resetTokens {ResetTokens}; remainingRequests {RemainingRequests}",
-                model,
-                remainingTokens ?? "?",
-                resetTokens ?? "?",
-                remainingRequests ?? "?");
+        throw new AiUnavailableException();
     }
 }

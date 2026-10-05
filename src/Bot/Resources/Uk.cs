@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Trivozhno.Infrastructure.SillyTavern;
 
 namespace Trivozhno.Resources;
 
@@ -7,28 +6,12 @@ public sealed class Uk
 {
     private readonly Dictionary<string, string> strings;
     private readonly Dictionary<string, string[]> aliases;
-    public string ChatPrompt { get; }
-    public string SummaryPrompt { get; }
-    public string OpeningMessage { get; }
-    public TavernConfiguration Tavern { get; }
-
     public Uk()
     {
         var root = Path.Combine(AppContext.BaseDirectory, "Resources");
         strings = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(Path.Combine(root, "uk.json")))!;
         aliases = JsonSerializer.Deserialize<Dictionary<string, string[]>>(File.ReadAllText(Path.Combine(root, "button-aliases.json")))!;
-        var characterPath = Path.Combine(root, "Conversation", "friend-character.json");
-        Tavern = new(root);
-        ChatPrompt = Tavern.BaseInstruction;
-        OpeningMessage = Tavern.Character.FirstMessage;
-        SummaryPrompt = File.ReadAllText(Path.Combine(root, "Prompts", "summary-v1.txt"));
 
-        Console.WriteLine(
-            $"[PROMPT] File={Path.Combine(root, "Conversation", "sillytavern-ua.json")} " +
-            $"Character={characterPath} Engine={TavernConfiguration.EngineVersion} Format=text " +
-            $"Upstream=1.19.0 Commit={TavernConfiguration.UpstreamCommit} " +
-            $"Examples={Tavern.Examples.Count} ExampleTokens={Tavern.ExampleReserve} Chars={ChatPrompt.Length} " +
-            $"SHA256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ChatPrompt)))}");
     }
 
     public string this[string key] => strings[key];

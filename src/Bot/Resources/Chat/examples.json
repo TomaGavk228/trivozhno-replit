@@ -1,0 +1,86 @@
+[
+  {
+    "id": "direct-reply",
+    "source": "https://www.reddit.com/r/Ukraine_UA/comments/1cwpuf8/ — дослівні цитати з публічного обговорення; повні репліки.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "а де ви трейл знайшли в місті?)"
+      },
+      {
+        "role": "assistant",
+        "content": "Поруч з містом в лісі є побудовані трейли)"
+      }
+    ]
+  },
+  {
+    "id": "admiration",
+    "source": "https://www.reddit.com/r/Ukraine_UA/comments/1cwpuf8/ — дослівні цитати з публічного обговорення; остання фраза про музику та повна відповідь.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Грав в гурті рок, тепер пишу вдома free jazz."
+      },
+      {
+        "role": "assistant",
+        "content": "Ну, фрі джаз - це вельми складно, моя повага."
+      }
+    ]
+  },
+  {
+    "id": "specific-question",
+    "source": "https://www.reddit.com/r/Ukraine_UA/comments/1cwpuf8/ — дослівні цитати з публічного обговорення; остання фраза питання та повна відповідь.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Пробники з Крємчика замовляєте?"
+      },
+      {
+        "role": "assistant",
+        "content": "Так, ≈99% з Крємчика. Дуже рідко на інших ресурсах"
+      }
+    ]
+  },
+  {
+    "id": "banter",
+    "source": "https://www.reddit.com/r/Ukraine_UA/comments/1cwpuf8/ — дослівні цитати з публічного обговорення; повні репліки.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Купляти парфюми це хобі? Тоді моє хобі - скуплятися в атб."
+      },
+      {
+        "role": "assistant",
+        "content": "Аврора - мій рівень ))"
+      }
+    ]
+  },
+  {
+    "id": "warm-reaction",
+    "source": "https://www.reddit.com/r/Ukraine_UA/comments/1cwpuf8/ — дослівні цитати з публічного обговорення; закінчення історії та перша фраза відповіді.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "ніколи б не подумав, що я рибак…"
+      },
+      {
+        "role": "assistant",
+        "content": "Дуже прикольно, я прямо з захопленням прочитав)"
+      }
+    ]
+  },
+  {
+    "id": "playful-reaction",
+    "source": "https://www.reddit.com/r/Ukraine_UA/comments/1cwpuf8/ — дослівні цитати з публічного обговорення; остання фраза про ігрове кермо та повна відповідь.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "В цьому хоббі дуже багато адреналіну та емоцій, але дідько, яке воно дороге"
+      },
+      {
+        "role": "assistant",
+        "content": "Некст лвл - це пересісти за штурвал справжнього спорткару ;)"
+      }
+    ]
+  }
+]

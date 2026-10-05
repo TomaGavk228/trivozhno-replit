@@ -4,7 +4,6 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Trivozhno.Features.Confessions;
-using Trivozhno.Features.Memory;
 using Trivozhno.Features.Reminders;
 using Trivozhno.Infrastructure.Groq;
 using Trivozhno.Infrastructure.Persistence;
@@ -36,7 +35,7 @@ public sealed class BotLease : IAsyncDisposable
     public ValueTask DisposeAsync() => connection.DisposeAsync();
 }
 
-public sealed class Maintenance(IServiceScopeFactory scopes, UserLocks locks, IClock clock, BotOptions options, ILogger<Maintenance> log)
+public sealed class Maintenance(IServiceScopeFactory scopes, UserLocks locks, IClock clock, BotOptions options)
 {
     public async Task Recover(CancellationToken ct)
     {
@@ -76,31 +75,7 @@ public sealed class Maintenance(IServiceScopeFactory scopes, UserLocks locks, IC
         await scanDb.Messages.Where(x => x.Status == "processing" && x.LeaseUntil < clock.UtcNow)
             .ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "queued").SetProperty(y => y.LeaseUntil, (DateTimeOffset?)null), ct);
     }
-    public async Task Summary(CancellationToken ct)
-    {
-        if (!options.Conversation) return;
-        using var scope = scopes.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<BotDb>();
-        if (await db.Messages.AnyAsync(x => x.Status == "queued" || x.Status == "processing", ct)) return;
-        var u = await db.Users.AsNoTracking().Where(x => x.SummaryNextAt <= clock.UtcNow && db.Messages.Count(m => m.UserId == x.Id && m.Status == "done") > 20)
-            .OrderBy(x => x.SummaryNextAt).FirstOrDefaultAsync(ct);
-        if (u is null) return;
-        await db.Users.Where(x => x.Id == u.Id).ExecuteUpdateAsync(x => x.SetProperty(y => y.SummaryNextAt, clock.UtcNow.AddMinutes(2)), ct);
-        try { await scope.ServiceProvider.GetRequiredService<IConversationMemory>().Summarize(u.Id, u.MemoryVersion, ct); }
-        catch (AiUnavailableException e) when (e.Reason is "authentication" or "permission_denied" or
-            "model_permission_blocked_org" or "model_permission_blocked_project")
-        {
-            // Permissions need an operator action; do not retry every two minutes.
-            await db.Users.Where(x => x.Id == u.Id).ExecuteUpdateAsync(x =>
-                x.SetProperty(y => y.SummaryNextAt, clock.UtcNow.AddMinutes(30)), ct);
-            log.LogWarning("Summary access denied; model {Model}; reason {Reason}; next attempt in 30 minutes",
-                options.SummaryModel, e.Reason);
-        }
-        catch (Exception e) when (!ct.IsCancellationRequested)
-        {
-            log.LogWarning("Summary postponed: {Category}; reason {Reason}", e.GetType().Name,
-                e is AiUnavailableException failure ? failure.Reason : "unexpected");
-        }
-    }
+
 }
 
 public sealed class BotRuntime(IServiceScopeFactory scopes, InboxProcessor inbox, AiProcessor ai, OutboxProcessor outbox, Maintenance maintenance,
@@ -128,7 +103,6 @@ public sealed class BotRuntime(IServiceScopeFactory scopes, InboxProcessor inbox
                 }, 100, stoppingToken),
                 Loop("inbox", inbox.Step, 80, stoppingToken), Loop("outbox", outbox.Step, 50, stoppingToken),
                 Loop("maintenance", async ct => { await maintenance.Tick(ct); return false; }, 3000, stoppingToken),
-                Loop("summary", async ct => { await maintenance.Summary(ct); return false; }, 15000, stoppingToken),
                 Heartbeat(lease, stoppingToken)
             };
             for (var i = 0; i < options.AiConcurrency; i++) tasks.Add(Loop("ai", ai.Step, 150, stoppingToken));

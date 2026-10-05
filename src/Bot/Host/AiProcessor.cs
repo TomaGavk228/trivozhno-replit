@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
-using Trivozhno.Features.Memory;
 using Trivozhno.Features.Conversation;
 using Trivozhno.Features.Navigation;
 using Trivozhno.Infrastructure.Groq;
@@ -17,7 +16,7 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
     {
         ChatMessage? job = null;
         BotUser? user = null;
-        ConversationContext? context = null;
+        ChatContext? context = null;
         var leaseAttempt = 0;
 
         await claimGate.WaitAsync(ct);
@@ -59,7 +58,7 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
                 current.LeaseUntil = clock.UtcNow.AddSeconds(options.JobBudget + 30);
                 try
                 {
-                    context = await scope.ServiceProvider.GetRequiredService<IConversationMemory>().Build(currentUser, current, ct);
+                    context = await scope.ServiceProvider.GetRequiredService<ChatHistory>().Build(currentUser, current, ct);
                 }
                 catch (ContextTooLargeException)
                 {
@@ -82,7 +81,6 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             job.Id, (clock.UtcNow - job.CreatedAt).TotalMilliseconds, TokenEstimate.Count(context.Messages));
         var watch = Stopwatch.StartNew();
         AiResult? result = null;
-        var metadata = ConversationMemory.BuildMetadata("", []);
         var error = "chat.error";
 
         using (var scope = scopes.CreateScope())
@@ -100,10 +98,7 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
                 {
                     log.LogDebug("Typing indicator unavailable: {Category}", e.GetType().Name);
                 }
-                var reply = await scope.ServiceProvider.GetRequiredService<ChatResponder>().Reply(context, ct);
-                result = reply.Result;
-                metadata = ConversationMemory.BuildMetadata(reply.ConversationState, reply.Sources,
-                    reply.Result.Text, context.SeenFactIds);
+                result = await scope.ServiceProvider.GetRequiredService<ChatResponder>().Reply(context, ct);
             }
             catch (ContextTooLargeException)
             {
@@ -130,11 +125,8 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             if (u is null || current is null || current.Status != "processing" || current.Attempts != leaseAttempt ||
                 session?.Revision != job.TurnRevision || u.SessionId != job.SessionId || u.MemoryVersion != job.MemoryVersion) return true;
 
-            if (context.ExplicitStyleDelta.Count > 0)
-                u.ChatStyleProfile = ChatStyleProfile.Apply(u.ChatStyleProfile, context.ExplicitStyleDelta);
-
             var ui = scope.ServiceProvider.GetRequiredService<Ui>();
-            if (result is null || context.HasMood && !u.MoodContextEnabled)
+            if (result is null)
             {
                 current.Status = "unanswered";
                 ui.Say(u, error);
@@ -152,8 +144,8 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
                     ReplyToId = job.Id,
                     MemoryVersion = job.MemoryVersion,
                     CreatedAt = clock.UtcNow,
-                    MoodDerived = context.HasMood,
-                    SourcesJson = metadata
+                    MoodDerived = false,
+                    SourcesJson = "[]"
                 });
                 ui.Text(u, result.Text, ui.Reply("chat.end"), "ai", job.SessionId, job.MemoryVersion,
                     turnRevision: job.TurnRevision, replyToId: job.Id);

@@ -137,12 +137,8 @@ public static class OperatorCommands
                 }));
                 return 0;
             }
-            case "groq-smoke":
-                if (!args.Contains("--live")) throw new InvalidOperationException("Supply --live to consume a small amount of Groq quota.");
-                var result = await provider.GetRequiredService<IAiClient>().Complete([new("system", "Відповідай українською одним коротким реченням."), new("user", "Привіт!")], false, ct);
-                Console.WriteLine(JsonSerializer.Serialize(new { result.Model, result.Tokens, Answer = result.Text })); return 0;
             default:
-                Console.Error.WriteLine("Commands: serve, migrate, channel-id, delete-webhook, import-books --path DIR, list-books, audit-books, deactivate-book ID, search-books --query TEXT, inspect-outbox, mark-delivered ID --message-id ID, retry-delivery ID [--accept-duplicate-risk], metrics, groq-smoke --live"); return 2;
+                Console.Error.WriteLine("Commands: serve, migrate, channel-id, delete-webhook, import-books --path DIR, list-books, audit-books, deactivate-book ID, search-books --query TEXT, inspect-outbox, mark-delivered ID --message-id ID, retry-delivery ID [--accept-duplicate-risk], metrics"); return 2;
         }
     }
     private static string? Option(string[] args, string option)

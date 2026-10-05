@@ -7,7 +7,6 @@ using Trivozhno.Features.Settings;
 using Trivozhno.Host;
 using Trivozhno.Infrastructure.Persistence;
 using Trivozhno.Infrastructure.Telegram;
-using Trivozhno.Infrastructure.SillyTavern;
 using Trivozhno.Resources;
 
 namespace Trivozhno.Features.Navigation;
@@ -22,7 +21,7 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
         if (command == "/source")
         {
             ui.Enqueue(null, input.TelegramId,
-                "Вихідний код цієї версії та ліцензія:\n" + TavernConfiguration.SourceUrl);
+                "Вихідний код цієї версії та ліцензія:\n" + "https://github.com/TomaGavk228/trivozhno-replit/tree/feat/chat-reset-2026-10-05");
             return;
         }
         var u = await db.Users.SingleOrDefaultAsync(x => x.TelegramId == input.TelegramId, ct);
@@ -172,7 +171,6 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
             switch (action)
             {
                 case "settings:reminders" when options.Reminders && options.Conversation: await reminders.Show(u, ct); return;
-                case "settings:mood" when options.Mood && options.Conversation: settings.ToggleMood(u); return;
                 case "settings:clear": settings.ConfirmClear(u); return;
                 case "settings:delete": settings.ConfirmDelete(u); return;
                 case "settings:about": ui.Say(u, "settings.about.text"); settings.Show(u); return;
@@ -191,7 +189,6 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
         if (action == "settings:cancel" && u.State is UserState.ConfirmClearMemory or UserState.ConfirmDeleteData or UserState.ConfirmMoodContext) { settings.Show(u); return; }
         if (u.State == UserState.ConfirmClearMemory && action == "settings:clear:yes") { await settings.Clear(u, ct); return; }
         if (u.State == UserState.ConfirmDeleteData && action == "settings:delete:yes") { await settings.Delete(u, ct); return; }
-        if (u.State == UserState.ConfirmMoodContext && action == "settings:mood:yes" && options.Mood && options.Conversation) { settings.ConsentMood(u); return; }
         ui.Say(u, "stale");
     }
     private void Discard(BotUser u, string then)
