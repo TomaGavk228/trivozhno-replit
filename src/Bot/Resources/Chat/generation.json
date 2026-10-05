@@ -4,6 +4,6 @@
   "temperature": 0.8,
   "topP": 1.0,
   "maxCompletionTokens": 1200,
-  "inputTokenBudget": 4200,
+  "inputTokenBudget": 6000,
   "historyTurns": 16
 }
