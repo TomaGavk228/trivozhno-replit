@@ -1,8 +1,8 @@
 {
-  "model": "openai/gpt-oss-120b",
-  "reasoningEffort": "medium",
-  "temperature": 0.6,
-  "topP": 1.0,
+  "model": "glm-4.7-flash",
+  "reasoningEffort": "none",
+  "temperature": 0.7,
+  "topP": 0.95,
   "maxCompletionTokens": 1600,
   "inputTokenBudget": 6000,
   "historyTurns": 16,

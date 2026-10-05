@@ -49,12 +49,19 @@ public static class ChatReplyFormat
 
     public static int FormatTokens(string model) => TokenEstimate.Count(JsonSerializer.Serialize(ResponseFormat(model))) + 24;
 
+    // Z.ai JSON mode does not take json_schema; describe the contract in the prompt.
+    public static string InstructionFor(string model) => model.StartsWith("glm-", StringComparison.Ordinal)
+        ? Instruction + "\nОбов’язкова структура JSON (усі три поля потрібні; memory_updates може бути []):\n" + Schema.GetRawText()
+        : Instruction;
+
     public static ChatReply Parse(string content)
     {
         try
         {
             var result = JsonSerializer.Deserialize<ChatReply>(content, Json);
             if (result is null || string.IsNullOrWhiteSpace(result.Reply) || result.ConversationState is null || result.MemoryUpdates is null)
+                throw new AiUnavailableException("invalid_chat_envelope");
+            if (result.MemoryUpdates.Any(m => m is null || string.IsNullOrWhiteSpace(m.Key) || string.IsNullOrWhiteSpace(m.Quote)))
                 throw new AiUnavailableException("invalid_chat_envelope");
             return result with { Reply = result.Reply.Trim(), ConversationState = Clip(result.ConversationState.Trim(), 900) };
         }

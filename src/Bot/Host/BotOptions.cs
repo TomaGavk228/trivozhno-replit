@@ -7,6 +7,10 @@ public sealed class BotOptions
     public string Database { get; init; } = "";
     public string TelegramToken { get; init; } = "";
     public string GroqKey { get; init; } = "";
+    public string AiProvider { get; init; } = "zai";
+    public string ZaiKey { get; init; } = "";
+    public int ZaiConcurrency { get; init; } = 1;
+    public bool IsZai => AiProvider == "zai";
     public long ChannelId { get; init; }
     public int AiConcurrency { get; init; } = 2;
     public int AiTimeout { get; init; } = 45;
@@ -35,6 +39,8 @@ public sealed class BotOptions
     {
         Database = c["DATABASE_URL"] ?? "", TelegramToken = c["TELEGRAM_BOT_TOKEN"] ?? "",
         GroqKey = c["GROQ_API_KEY"] ?? "", ChannelId = long.TryParse(c["CONFESSIONS_CHANNEL_ID"], out var id) ? id : 0,
+        AiProvider = (c["AI_PROVIDER"] ?? "zai").Trim().ToLowerInvariant(), ZaiKey = c["ZAI_API_KEY"] ?? "",
+        ZaiConcurrency = Int(c, "ZAI_MAX_CONCURRENCY", 1, 1, 16),
         AiConcurrency = Int(c, "AI_MAX_CONCURRENCY", 2, 1, 16), AiTimeout = Int(c, "AI_TIMEOUT_SECONDS", 45, 1, 120),
         JobBudget = Int(c, "AI_JOB_BUDGET_SECONDS", 100, 10, 300), QueueWait = Int(c, "AI_MAX_QUEUE_WAIT_SECONDS", 300, 10, 3600),
         RequestsPerMinute = Int(c, "GROQ_RPM", 25, 1, 100000), TokensPerMinute = Int(c, "GROQ_TPM", 8000, 2000, 10000000),
@@ -52,13 +58,21 @@ public sealed class BotOptions
     private static bool Flag(IConfiguration c, string key) => c[key] is null || c[key] is "1" or "true";
     public void Validate(bool live)
     {
+        if (AiProvider is not ("zai" or "groq")) throw new InvalidOperationException("Invalid AI_PROVIDER. Use zai or groq.");
         if (string.IsNullOrWhiteSpace(Database)) throw new InvalidOperationException("Set DATABASE_URL in Secrets.");
         _ = ConnectionStrings.Parse(Database);
         _ = TimeZoneInfo.FindSystemTimeZoneById(Timezone);
         if (!live) return;
         if (string.IsNullOrWhiteSpace(TelegramToken)) throw new InvalidOperationException("Set TELEGRAM_BOT_TOKEN in Secrets.");
-        if (Conversation && string.IsNullOrWhiteSpace(GroqKey)) throw new InvalidOperationException("Set GROQ_API_KEY in Secrets.");
+        if (Conversation && string.IsNullOrWhiteSpace(IsZai ? ZaiKey : GroqKey))
+            throw new InvalidOperationException(IsZai ? "Set ZAI_API_KEY in Secrets." : "Set GROQ_API_KEY in Secrets.");
         if (Confessions && ChannelId >= 0) throw new InvalidOperationException("Set negative CONFESSIONS_CHANNEL_ID in Secrets.");
+    }
+
+    public void ValidateModel(string model)
+    {
+        if (IsZai != model.StartsWith("glm-", StringComparison.Ordinal))
+            throw new InvalidOperationException("Invalid AI_PROVIDER/model combination. For zai use glm-4.7-flash in generation.json.");
     }
 }
 

@@ -21,7 +21,7 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
         if (command == "/source")
         {
             ui.Enqueue(null, input.TelegramId,
-                "Вихідний код цієї версії та ліцензія:\n" + "https://github.com/TomaGavk228/trivozhno-replit/tree/feat/chat-reset-2026-10-05");
+                "Вихідний код цієї версії та ліцензія:\n" + "https://github.com/TomaGavk228/trivozhno-replit/tree/feat/glm-4-7-flash-2026-10-05");
             return;
         }
         var u = await db.Users.SingleOrDefaultAsync(x => x.TelegramId == input.TelegramId, ct);

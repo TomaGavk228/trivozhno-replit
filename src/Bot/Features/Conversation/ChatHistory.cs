@@ -14,9 +14,11 @@ public sealed class ChatHistory(BotDb db, ChatConfiguration configuration, BotOp
     {
         var snapshot = configuration.Read();
         var settings = snapshot.Generation;
-        var limit = Math.Min(settings.InputTokenBudget,
-                Math.Min(options.TokensPerMinute, options.TokensPerDay) - settings.MaxCompletionTokens - 128)
-            - ChatReplyFormat.FormatTokens(settings.Model);
+        options.ValidateModel(settings.Model);
+        // Z.ai admission is based on its own concurrency/429 responses, not Groq quotas.
+        var providerInputLimit = options.IsZai ? settings.InputTokenBudget :
+            Math.Min(options.TokensPerMinute, options.TokensPerDay) - settings.MaxCompletionTokens - 128;
+        var limit = Math.Min(settings.InputTokenBudget, providerInputLimit) - ChatReplyFormat.FormatTokens(settings.Model);
         var instruction = new AiMessage("system", snapshot.Instruction);
         var latest = new AiMessage("user", current.TurnText ?? current.Text);
         if (TokenEstimate.Count(new[] { instruction, latest }) > limit) throw new ContextTooLargeException();

@@ -10,6 +10,7 @@ using Trivozhno.Infrastructure.Groq;
 using Trivozhno.Infrastructure.Knowledge;
 using Trivozhno.Infrastructure.Persistence;
 using Trivozhno.Infrastructure.Telegram;
+using Trivozhno.Infrastructure.Zai;
 using Trivozhno.Resources;
 
 namespace Trivozhno.Host;
@@ -24,7 +25,12 @@ public static class ServiceRegistration
         // Suppress HttpClient URLs (Telegram embeds the secret in the path) and SQL payloads.
         services.AddLogging(b => { b.AddFilter("System.Net.Http.HttpClient", LogLevel.None); b.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.None); });
         services.AddHttpClient<ITelegramClient, TelegramClient>(c => c.Timeout = TimeSpan.FromSeconds(40)).RemoveAllLoggers();
-        services.AddHttpClient<IAiClient, GroqClient>(c => c.Timeout = Timeout.InfiniteTimeSpan).RemoveAllLoggers();
+        if (options.IsZai)
+        {
+            services.AddSingleton<ZaiRequestGate>();
+            services.AddHttpClient<IAiClient, ZaiClient>(c => c.Timeout = Timeout.InfiniteTimeSpan).RemoveAllLoggers();
+        }
+        else services.AddHttpClient<IAiClient, GroqClient>(c => c.Timeout = Timeout.InfiniteTimeSpan).RemoveAllLoggers();
         // Deterministic book search remains an operator utility, not chat context.
         services.AddScoped<IKnowledgeRetriever, KnowledgeRetriever>();
         services.AddSingleton<ChatConfiguration>(); services.AddScoped<ChatHistory>(); services.AddScoped<ChatMemory>();

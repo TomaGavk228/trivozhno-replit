@@ -12,7 +12,8 @@ try
     if (!cli) builder.Services.AddHostedService<BotRuntime>();
     builder.WebHost.UseUrls($"http://0.0.0.0:{builder.Configuration["PORT"] ?? "8080"}");
     var app = builder.Build();
-    if (!cli && options.Conversation) _ = app.Services.GetRequiredService<Trivozhno.Features.Conversation.ChatConfiguration>();
+    if (!cli && options.Conversation)
+        options.ValidateModel(app.Services.GetRequiredService<Trivozhno.Features.Conversation.ChatConfiguration>().Read().Generation.Model);
     if (cli) { Environment.ExitCode = await OperatorCommands.Run(app.Services, args); return; }
     app.MapGet("/api/healthz", () => Results.Ok(new { status = "alive" }));
     app.MapGet("/api/readyz", async (BotDb db, WorkerStatus status, IClock clock, CancellationToken ct) =>

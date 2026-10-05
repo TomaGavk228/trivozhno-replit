@@ -81,6 +81,8 @@ public sealed class ChatConfiguration
                     settings.MaxCompletionTokens is < 256 or > 4000 ||
                     settings.InputTokenBudget is < 1000 or > 32_000 || settings.HistoryTurns is < 1 or > 40 ||
                     settings.MemoryTokenBudget is < 0 or > 2000 ||
+                    (settings.Model.StartsWith("glm-", StringComparison.Ordinal) &&
+                        (settings.Temperature > 1 || settings.TopP < .01)) ||
                     examples.Length > 30 || examples.Any(e => !ValidExample(e)))
                     throw new InvalidDataException();
                 var instruction = prompt;
@@ -94,7 +96,7 @@ public sealed class ChatConfiguration
                         instruction += "\n[Окремий приклад]\n" + example + "\n";
                     instruction += "\n[Кінець прикладів. Далі — справжня поточна розмова.]";
                 }
-                instruction += "\n\n" + ChatReplyFormat.Instruction;
+                instruction += "\n\n" + ChatReplyFormat.InstructionFor(settings.Model);
                 current = new(instruction, settings, hash[..12], examples.Length);
                 log.LogInformation("Chat configuration loaded; directory {Directory}; SHA {Hash}; examples {Examples}; model {Model}",
                     DirectoryPath, current.Hash, examples.Length, settings.Model);

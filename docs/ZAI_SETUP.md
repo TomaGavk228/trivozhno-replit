@@ -1,0 +1,69 @@
+# Z.ai GLM‑4.7‑Flash
+
+Гілка `feat/glm-4-7-flash-2026-10-05` створена від `feat/chat-reset-2026-10-05`, коміт `340bdfec84810263b0ca5e7587d35c2de5ddf919`.
+
+## Replit
+
+1. Зупини поточний Run.
+2. У Secrets додай `ZAI_API_KEY` зі своїм ключем Z.ai та `AI_PROVIDER` зі значенням `zai`.
+3. У Shell з кореня проєкту виконай:
+
+```bash
+git fetch origin
+git switch --track origin/feat/glm-4-7-flash-2026-10-05
+```
+
+4. Натисни Run. Його команда залишається `bash scripts/run.sh`.
+
+Для наступних оновлень уже створеної локальної гілки:
+
+```bash
+git switch feat/glm-4-7-flash-2026-10-05
+git pull --ff-only
+```
+
+Ключ не додається у Git, команди Shell, `.env.example` або чат. Застосунок читає Replit Secrets як змінні середовища; `.env` не завантажується автоматично. Наявні DATABASE_URL, TELEGRAM_BOT_TOKEN та інші налаштування меню залишаються.
+
+Якщо раніше задано `CHAT_CONTENT_PATH`, онови `generation.json` саме в цій папці або прибери перевизначення, щоб читались файли цієї гілки. Лог `Chat configuration loaded` покаже активну папку й модель. При невідповідності провайдера/моделі запуск зупиниться з явною помилкою.
+
+## Конфігурація
+
+| Налаштування | Початкове значення |
+|---|---|
+| AI_PROVIDER | zai |
+| ZAI_API_KEY | лише Replit Secret |
+| ZAI_MAX_CONCURRENCY | 1; локальна кількість одночасних запитів |
+| model | glm-4.7-flash |
+| reasoningEffort | none → thinking.type=disabled |
+| temperature / topP | 0.7 / 0.95 |
+| maxCompletionTokens | 1600 → max_tokens |
+| inputTokenBudget / historyTurns / memoryTokenBudget | 6000 / 16 / 1000 |
+
+Використовується звичайний endpoint `https://api.z.ai/api/paas/v4/chat/completions`, не Coding Plan. GLM‑4.7‑Flash обрано через вимогу безкоштовного API; `glm-4.7` та `glm-4.7-flashx` — інші моделі. Автоматичного переходу на них або Groq немає.
+
+Промпт поведінки й вісім прикладів успадковані без змін. Для Z.ai JSON mode службова інструкція доповнена структурою з обов’язковими `reply`, `conversation_state`, `memory_updates`. Один виклик повертає відповідь і пам’ять. HTTP-повтори можливі лише при 429/5xx, без окремих викликів для ремонту JSON. `reasoning_content` не показується й не повертається у наступний контекст.
+
+## Квота та дані
+
+Клієнт Z.ai не звертається до `AiQuota` Groq. Він не читає GROQ_RPM/TPM/RPD/TPD для допуску запитів, а контекст GLM не урізається через старі квоти Groq. Немає вигаданого локального добового ліміту Z.ai. Фактичні обмеження залежать від акаунта провайдера; безкоштовна модель не означає необмежену паралельність чи гарантовану доступність.
+
+`ZAI_MAX_CONCURRENCY=1` застосовується навіть якщо старий `AI_MAX_CONCURRENCY=2` залишився в Secrets. Після 429 спільний клієнт чекає `Retry-After` (або поступове очікування за відсутності заголовка), у межах AI_JOB_BUDGET_SECONDS. Повідомлення, час очікування якого перевищив бюджет, завершується помилкою; нескінченної серії HTTP-повторів немає.
+
+Фактичне використання записується у наявну ApiUsage з моделлю `zai/glm-4.7-flash`, окремо від історії Groq; ці записи є статистикою, не блокувальним лічильником. Якщо usage не повернуто, зберігається оцінка й у логах видно `usage reported False`. Витрати невдалих HTTP-запитів можуть не мати usage і не потрапити до локальної статистики.
+
+Нова міграція не потрібна. Довготривала пам’ять, стан, переписка, книжки, щоденник і зізнання залишаються в тих самих таблицях.
+
+## Діагностика
+
+Очікувані логи: `model glm-4.7-flash`, `Z.ai text request`, `thinking False`, `Z.ai timing ... status 200`, `Z.ai text response`.
+
+- `Set ZAI_API_KEY in Secrets.` — ключ відсутній.
+- `Invalid AI_PROVIDER/model combination` — провайдер і активний generation.json не відповідають один одному.
+- HTTP 401/403 — перевір доступ ключа до стандартного API; код помилки провайдера логуються без тексту відповіді й секретів.
+- HTTP 429 / `rate_limit` — обмеження Z.ai; подивись ліміт акаунта та Retry-After.
+- `invalid_chat_envelope` — відповідь не відповідає потрібним полям JSON; жодні сирі JSON чи міркування у Telegram не показуються.
+- `incomplete_response` — API не завершив відповідь; перевір finish_reason та вихідний бюджет.
+
+Ключ, тексти повідомлень і повні помилки API в логи не потрапляють. Інтеграція з живим Z.ai і якість українських відповідей потребують запуску з ключем у Replit; локальна збірка цього не доводить. Автоматичні тести не запускались за вказівкою користувача.
+
+Джерела: [Chat Completion](https://docs.z.ai/api-reference/llm/chat-completion), [Structured Output](https://docs.z.ai/guides/capabilities/struct-output), [Thinking Mode](https://docs.z.ai/guides/capabilities/thinking-mode), [GLM‑4.7 Series](https://docs.z.ai/guides/llm/glm-4.7).
