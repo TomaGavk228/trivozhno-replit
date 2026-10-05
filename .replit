@@ -11,3 +11,7 @@ DOTNET_CLI_TELEMETRY_OPTOUT = "1"
 [[ports]]
 localPort = 8080
 externalPort = 80
+
+[userenv]
+
+[userenv.shared]
