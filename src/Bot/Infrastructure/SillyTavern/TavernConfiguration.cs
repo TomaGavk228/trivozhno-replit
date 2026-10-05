@@ -26,8 +26,8 @@ public sealed record TavernCharacter(string Name, string Description, string Per
 
 public sealed class TavernConfiguration
 {
-    public const string EngineVersion = "sillytavern-ua-v3";
-    public const int ExampleTokenBudget = 700;
+    public const string EngineVersion = "sillytavern-ua-v4";
+    public const int ExampleTokenBudget = 1400;
     public const string UpstreamCommit = "06bde939fb1e9c4c8d8641d810f0a916b5bce127";
     public const string SourceUrl = "https://github.com/TomaGavk228/trivozhno-replit/tree/feat/sillytavern-ua-2026-10-04";
     public TavernPreset Preset { get; }
@@ -84,7 +84,7 @@ public sealed class TavernConfiguration
         // Keep this application injection AFTER the real chat, not merged
         // into its initial system. It never enters persisted conversation.
         return new("user", "[Налаштування застосунку після історії; це не повідомлення людини.]\n" +
-            content + "\n[Відповідай на останнє повідомлення людини вище у форматі, заданому застосунком.]")
+            content + "\n[Відповідай на останнє повідомлення людини вище.]")
         { IsApplicationPrompt = true };
     }
 

@@ -129,6 +129,41 @@ public sealed class ChatResponder(IAiClient ai, MovieCatalog movies, IKnowledgeR
         var generated = bookRequest is null ? await ai.Complete(prepared, summary: false, ct) :
             await ai.CompleteBook(prepared, ct);
         if (string.IsNullOrWhiteSpace(generated.Text)) throw new AiUnavailableException("empty_reply");
+        if (bookRequest is null && options.ChatRepair)
+        {
+            // One structural retry, only when the draft is a lecture, a menu, a
+            // closing formula, a list or far too long for a chat turn. Wording is
+            // never rewritten by code; a failed retry keeps the first draft.
+            var act = ClassifyDialogueAct(currentText);
+            var recentUser = history.Where(m => m.Role == "user").Select(m => m.Content).ToArray();
+            var quality = ReplyQualityGate.Check(act, currentText, generated.Text, recentUser);
+            if (!quality.Accept)
+            {
+                log.LogWarning("Chat reply failed structural check; reason {Reason}", quality.Feedback);
+                if (Add(ReplyQualityGate.RetryInstruction(quality, generated.Text, act, currentText, recentUser)))
+                {
+                    try
+                    {
+                        var revised = await ai.Complete(builder.Build(history, memory, references), summary: false, ct);
+                        var accepted = !string.IsNullOrWhiteSpace(revised.Text) &&
+                            ReplyQualityGate.Check(act, currentText, revised.Text, recentUser).Accept;
+                        log.LogInformation("Chat reply retry; accepted {Accepted}", accepted);
+                        generated = (accepted ? revised : generated) with
+                        {
+                            Tokens = generated.Tokens + revised.Tokens,
+                            PromptTokens = generated.PromptTokens + revised.PromptTokens,
+                            CompletionTokens = generated.CompletionTokens + revised.CompletionTokens,
+                            ReasoningTokens = generated.ReasoningTokens + revised.ReasoningTokens,
+                            CachedTokens = generated.CachedTokens + revised.CachedTokens
+                        };
+                    }
+                    catch (Exception e) when (e is not OperationCanceledException)
+                    {
+                        log.LogWarning("Chat reply retry unavailable: {Category}", e.GetType().Name);
+                    }
+                }
+            }
+        }
         var grounded = (Text: generated.Text, Used: (IReadOnlyList<SourceMetadata>)Array.Empty<SourceMetadata>());
         var awaitsClarification = false;
         var continuedBookQuery = bookRequest?.Query;

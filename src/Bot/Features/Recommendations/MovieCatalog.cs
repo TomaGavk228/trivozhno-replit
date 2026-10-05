@@ -49,16 +49,23 @@ public sealed class MovieCatalog
             Uri.TryCreate(m.Source, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https") &&
         movies.Select(m => m.Id).Distinct(StringComparer.Ordinal).Count() == movies.Length;
 
+    private static readonly string[] AskWords = ["порад", "підкаж"];
+
+    // A genre root alone ("жах", "драм") is also ordinary speech about feelings;
+    // it starts a film search only together with a film word or an explicit ask.
+    private static bool WantsFilm(string text) => FilmWords.Any(text.Contains) ||
+        GenreRoots.Any(text.Contains) && AskWords.Any(text.Contains);
+
     public MovieSelection? Find(IReadOnlyList<AiMessage> messages)
     {
         var current = messages.LastOrDefault(m => m.Role == "user")?.Content.ToLowerInvariant() ?? "";
-        var direct = FilmWords.Any(current.Contains) || GenreRoots.Any(current.Contains);
+        var direct = WantsFilm(current);
         var preceding = messages.Where(m => m.Role == "user").SkipLast(1)
             .Reverse().Take(6).Select(m => m.Content.ToLowerInvariant());
         string previousQuery = "";
         foreach (var text in preceding)
         {
-            if (FilmWords.Any(text.Contains) || GenreRoots.Any(text.Contains))
+            if (WantsFilm(text))
             { previousQuery = text; break; }
             if (!IsRefinement(text)) break; // Do not revive an old film topic after a topic change.
         }

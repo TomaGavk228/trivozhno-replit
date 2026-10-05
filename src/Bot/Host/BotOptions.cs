@@ -20,7 +20,7 @@ public sealed class BotOptions
     public int TokensPerMinute { get; init; } = 8000;
     public int RequestsPerDay { get; init; } = 900;
     public int TokensPerDay { get; init; } = 190000;
-    public int InputBudget { get; init; } = 4800;
+    public int InputBudget { get; init; } = 5400;
     public int TurnOutputBudget { get; init; } = 2048;
     public int MemoryContextTokens { get; init; } = 700;
     public int BookContextTokens { get; init; } = 850;
@@ -38,6 +38,7 @@ public sealed class BotOptions
     public bool Confessions { get; init; } = true;
     public bool Mood { get; init; } = true;
     public bool Reminders { get; init; } = true;
+    public bool ChatRepair { get; init; } = true;
 
     public static BotOptions Load(IConfiguration c) => new()
     {
@@ -51,7 +52,7 @@ public sealed class BotOptions
         JobBudget = Int(c, "AI_JOB_BUDGET_SECONDS", 100, 10, 300), QueueWait = Int(c, "AI_MAX_QUEUE_WAIT_SECONDS", 300, 10, 3600),
         RequestsPerMinute = Int(c, "GROQ_RPM", 25, 1, 100000), TokensPerMinute = Int(c, "GROQ_TPM", 8000, 2000, 10000000),
         RequestsPerDay = Int(c, "GROQ_RPD", 900, 1, 10000000), TokensPerDay = Int(c, "GROQ_TPD", 190000, 2000, 100000000),
-        InputBudget = Int(c, "AI_INPUT_TOKEN_BUDGET", 4800, 2000, 32000),
+        InputBudget = Int(c, "AI_INPUT_TOKEN_BUDGET", 5400, 2000, 32000),
         TurnOutputBudget = Int(c, "AI_TURN_OUTPUT_TOKEN_BUDGET", 2048, 500, 4000),
         MemoryContextTokens = Int(c, "AI_MEMORY_CONTEXT_TOKENS", 700, 0, 1500),
         BookContextTokens = Int(c, "AI_BOOK_CONTEXT_TOKENS", 850, 400, 1600),
@@ -59,6 +60,7 @@ public sealed class BotOptions
         MaxUserAiQueue = Int(c, "MAX_USER_AI_QUEUE", 20, 1, 100),
         ChatQuietMilliseconds = Int(c, "CHAT_QUIET_MS", 1200, 300, 3000),
         ChatGatherMilliseconds = Int(c, "CHAT_MAX_GATHER_MS", 3000, 1200, 10000),
+        ChatRepair = Flag(c, "CHAT_REPLY_REPAIR"),
         ChunkSize = Int(c, "BOOK_CHUNK_CHARS", 1800, 1200, 2200), ChunkOverlap = Int(c, "BOOK_CHUNK_OVERLAP", 180, 0, 300),
         Timezone = c["BOT_TIMEZONE"] ?? "Europe/Kyiv", Conversation = Flag(c, "FEATURE_CONVERSATION"),
         Confessions = Flag(c, "FEATURE_CONFESSIONS"), Mood = Flag(c, "FEATURE_MOOD"), Reminders = Flag(c, "FEATURE_REMINDERS")
