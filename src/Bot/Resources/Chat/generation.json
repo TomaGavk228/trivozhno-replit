@@ -1,5 +1,5 @@
 {
-  "model": "qwen/qwen3.8-27b",
+  "model": "openai/gpt-oss-120b",
   "reasoningEffort": "medium",
   "temperature": 0.6,
   "topP": 1.0,
