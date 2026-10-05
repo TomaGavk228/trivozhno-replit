@@ -82,17 +82,25 @@ public static class ChatReplyFormat
     {
         shape = "invalid_json";
         metadataIgnored = false;
+        var text = content.Trim().TrimStart('\uFEFF').Trim();
+        var fenced = text.StartsWith("```", StringComparison.Ordinal);
+        var newline = text.IndexOf('\n');
+        if (fenced && newline >= 0 && text.EndsWith("```", StringComparison.Ordinal))
+        {
+            var opening = text[..newline].TrimEnd();
+            if (opening.Equals("```json", StringComparison.OrdinalIgnoreCase) || opening == "```")
+                text = text[(newline + 1)..^3].Trim();
+        }
         try
         {
-            var text = content.Trim();
-            // Accept only a fence around the entire JSON, not JSON extracted from prose.
-            if (text.StartsWith("```json\n", StringComparison.OrdinalIgnoreCase) && text.EndsWith("```", StringComparison.Ordinal))
-                text = text[8..^3].Trim();
-            else if (text.StartsWith("```\n", StringComparison.Ordinal) && text.EndsWith("```", StringComparison.Ordinal))
-                text = text[4..^3].Trim();
-
-            using var json = JsonDocument.Parse(text);
+            using var json = JsonDocument.Parse(text, new JsonDocumentOptions { AllowTrailingCommas = true });
             var root = json.RootElement;
+            if (root.ValueKind == JsonValueKind.String && IsPlainReply(root.GetString() ?? ""))
+            {
+                shape = "json_string";
+                metadataIgnored = true;
+                return new(root.GetString()!.Trim(), "", []);
+            }
             var reply = Field(root, "reply");
             var state = Field(root, "conversation_state", "conversationState");
             var updates = Field(root, "memory_updates", "memoryUpdates");
@@ -121,8 +129,32 @@ public static class ChatReplyFormat
             return new(reply.GetString()!.Trim(), state.ValueKind == JsonValueKind.String
                 ? Clip(state.GetString()!.Trim(), 900) : "", memory.ToArray());
         }
-        catch (JsonException) { throw new AiUnavailableException("invalid_chat_envelope"); }
+        catch (JsonException error)
+        {
+            // Some completions ignore JSON mode and return a normal visible reply.
+            // Never expose broken envelopes, code fences or hidden metadata as text.
+            if (!fenced && IsPlainReply(text))
+            {
+                shape = "plain_text";
+                metadataIgnored = true;
+                return new(text, "", []);
+            }
+            shape = $"invalid_json; line={error.LineNumber}; byte={error.BytePositionInLine}; fenced={fenced}; chars={text.Length}";
+            throw new AiUnavailableException("invalid_chat_envelope");
+        }
     }
+
+    private static bool IsPlainReply(string text) => !string.IsNullOrWhiteSpace(text) &&
+        // A partially generated envelope is not a plain reply. Keep it private.
+        text.TrimStart()[0] is not ('{' or '[' or '"' or '`' or '<') &&
+        !text.Contains('{') && !text.Contains('}') && !text.Contains("```") &&
+        !text.Contains("conversation_state", StringComparison.OrdinalIgnoreCase) &&
+        !text.Contains("conversationState", StringComparison.OrdinalIgnoreCase) &&
+        !text.Contains("memory_updates", StringComparison.OrdinalIgnoreCase) &&
+        !text.Contains("memoryUpdates", StringComparison.OrdinalIgnoreCase) &&
+        !text.Contains("\"reply\"", StringComparison.OrdinalIgnoreCase) &&
+        !text.Contains("<think>", StringComparison.OrdinalIgnoreCase) &&
+        !text.Contains("</think>", StringComparison.OrdinalIgnoreCase);
 
     private static JsonElement Field(JsonElement value, string name, string? alias = null)
     {

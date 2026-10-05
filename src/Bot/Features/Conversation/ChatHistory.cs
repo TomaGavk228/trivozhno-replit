@@ -41,7 +41,13 @@ public sealed class ChatHistory(BotDb db, ChatConfiguration configuration, BotOp
         var included = new List<ChatMessage>();
         foreach (var group in groups)
         {
-            var candidate = group.Select(m => new AiMessage(m.Role, m.Role == "user" ? m.TurnText ?? m.Text : m.Text))
+            // GLM sees the same transport format it must generate. Stored and
+            // delivered messages stay plain text; this wrapping is only for the API.
+            string AssistantContent(ChatMessage message) => options.IsZai
+                ? System.Text.Json.JsonSerializer.Serialize(new ChatReply(message.Text,
+                    ChatMemory.ReadState(message.SourcesJson), []), ChatReplyFormat.Json)
+                : message.Text;
+            var candidate = group.Select(m => new AiMessage(m.Role, m.Role == "user" ? m.TurnText ?? m.Text : AssistantContent(m)))
                 .Concat(history).ToList();
             var candidateTokens = TokenEstimate.Count(candidate.Prepend(instruction).Append(latest));
             if (candidateTokens > limit || history.Count > 0 && candidateTokens > limit - memoryReserve) break;

@@ -169,7 +169,7 @@ public sealed class ZaiClient(HttpClient http, BotOptions options, ZaiRequestGat
             {
                 reply = ChatReplyFormat.ParseZai(content, out shape, out var metadataIgnored);
                 if (metadataIgnored)
-                    log.LogWarning("Z.ai chat metadata ignored; {Shape}", shape);
+                    log.LogWarning("Z.ai chat reply accepted without some metadata; {Shape}", shape);
             }
             catch (AiUnavailableException)
             {
