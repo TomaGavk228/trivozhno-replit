@@ -16,8 +16,6 @@ public sealed record ChatGenerationSettings
     public required int HistoryTurns { get; init; }
 }
 
-public sealed record ChatExample(string Id, string Source, IReadOnlyList<ChatExampleMessage> Messages);
-public sealed record ChatExampleMessage(string Role, string Content);
 public sealed record ChatConfigurationSnapshot(string Instruction, ChatGenerationSettings Generation, string Hash, int ExampleCount);
 
 // All files form one validated snapshot. Bad live edits retain the last valid
@@ -61,7 +59,7 @@ public sealed class ChatConfiguration
                     return File.ReadAllText(path);
                 }
                 var prompt = ReadFile("prompt.txt").Trim();
-                var examplesText = ReadFile("examples.json");
+                var examplesText = ReadFile("examples.txt");
                 var generationText = ReadFile("generation.json");
                 var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
                     JsonSerializer.Serialize(new[] { prompt, examplesText, generationText }))));
@@ -69,7 +67,8 @@ public sealed class ChatConfiguration
                 if (hash == observedHash && current is not null) return current;
                 observedHash = hash;
                 var settings = JsonSerializer.Deserialize<ChatGenerationSettings>(generationText, Json);
-                var examples = JsonSerializer.Deserialize<List<ChatExample>>(examplesText, Json);
+                var examples = examplesText.Replace("\r\n", "\n").Replace('\r', '\n')
+                    .Split("\n---\n", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
                 if (prompt.Length is < 40 or > 20_000 || settings is null ||
                     string.IsNullOrWhiteSpace(settings.Model) || settings.Model.Length > 100 ||
                     settings.ReasoningEffort is not (null or "low" or "medium" or "high" or "none" or "default") ||
@@ -79,33 +78,28 @@ public sealed class ChatConfiguration
                     !double.IsFinite(settings.TopP) || settings.TopP is <= 0 or > 1 ||
                     settings.MaxCompletionTokens is < 256 or > 4000 ||
                     settings.InputTokenBudget is < 1000 or > 32_000 || settings.HistoryTurns is < 1 or > 40 ||
-                    examples is null || examples.Count > 30 || examples.Any(e => !ValidExample(e)) ||
-                    examples.Select(e => e.Id).Distinct().Count() != examples.Count)
+                    examples.Length > 30 || examples.Any(e => !ValidExample(e)))
                     throw new InvalidDataException();
                 var instruction = prompt;
-                if (examples.Count > 0)
+                if (examples.Length > 0)
                 {
-                    instruction += "\n\nНижче окремі зразки людської переписки. Це приклади ритму та мови, " +
-                        "а не ваша історія, не факти про співрозмовника і не твоя біографія. " +
+                    instruction += "\n\nНижче окремі вигадані діалоги. Репліки «Друг» показують дружню манеру, ритм і мову. " +
+                        "Це не ваша історія, не факти про співрозмовника і не твоя біографія. " +
                         "Учасники й ситуації різні; не перенось їхній досвід у поточну розмову. " +
                         "Фрази не потрібно повторювати. Реагуй на справжню розмову після цього блоку.\n";
                     foreach (var example in examples)
-                    {
-                        instruction += "\n[Окремий приклад]\n";
-                        foreach (var message in example.Messages)
-                            instruction += (message.Role == "user" ? "Людина: " : "Відповідь: ") + message.Content + "\n";
-                    }
+                        instruction += "\n[Окремий приклад]\n" + example + "\n";
                     instruction += "\n[Кінець прикладів. Далі — справжня поточна розмова.]";
                 }
-                current = new(instruction, settings, hash[..12], examples.Count);
+                current = new(instruction, settings, hash[..12], examples.Length);
                 log.LogInformation("Chat configuration loaded; directory {Directory}; SHA {Hash}; examples {Examples}; model {Model}",
-                    DirectoryPath, current.Hash, examples.Count, settings.Model);
+                    DirectoryPath, current.Hash, examples.Length, settings.Model);
                 return current;
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
             {
                 if (current is null) throw new InvalidOperationException(
-                    $"Invalid chat configuration in {DirectoryPath}. Check prompt.txt, examples.json and generation.json.");
+                    $"Invalid chat configuration in {DirectoryPath}. Check prompt.txt, examples.txt and generation.json.");
                 if (!readFailureReported)
                     log.LogWarning("Chat configuration edit rejected; directory {Directory}; category {Category}; keeping SHA {Hash}",
                         DirectoryPath, e.GetType().Name, current.Hash);
@@ -115,10 +109,13 @@ public sealed class ChatConfiguration
         }
     }
 
-    private static bool ValidExample(ChatExample? example) => example is not null &&
-        !string.IsNullOrWhiteSpace(example.Id) && !string.IsNullOrWhiteSpace(example.Source) &&
-        example.Messages is { Count: >= 2 and <= 12 } && example.Messages[0]?.Role == "user" &&
-        example.Messages[^1]?.Role == "assistant" &&
-        example.Messages.Select((m, i) => m is not null && m.Role == (i % 2 == 0 ? "user" : "assistant") &&
-            !string.IsNullOrWhiteSpace(m.Content) && m.Content.Length <= 3000).All(valid => valid);
+    private static bool ValidExample(string example)
+    {
+        var lines = example.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return lines.Length is >= 2 and <= 12 && lines[0].StartsWith("Людина: ", StringComparison.Ordinal) &&
+            lines[^1].StartsWith("Друг: ", StringComparison.Ordinal) && lines.All(line =>
+                line.Length <= 3000 &&
+                (line.StartsWith("Людина: ", StringComparison.Ordinal) && line.Length > "Людина: ".Length ||
+                 line.StartsWith("Друг: ", StringComparison.Ordinal) && line.Length > "Друг: ".Length));
+    }
 }
