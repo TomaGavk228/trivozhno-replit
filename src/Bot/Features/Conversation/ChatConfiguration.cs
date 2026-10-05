@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Trivozhno.Features.Memory;
 
 namespace Trivozhno.Features.Conversation;
 
@@ -14,6 +15,7 @@ public sealed record ChatGenerationSettings
     public required int MaxCompletionTokens { get; init; }
     public required int InputTokenBudget { get; init; }
     public required int HistoryTurns { get; init; }
+    public int MemoryTokenBudget { get; init; } = 1000;
 }
 
 public sealed record ChatConfigurationSnapshot(string Instruction, ChatGenerationSettings Generation, string Hash, int ExampleCount);
@@ -78,6 +80,7 @@ public sealed class ChatConfiguration
                     !double.IsFinite(settings.TopP) || settings.TopP is <= 0 or > 1 ||
                     settings.MaxCompletionTokens is < 256 or > 4000 ||
                     settings.InputTokenBudget is < 1000 or > 32_000 || settings.HistoryTurns is < 1 or > 40 ||
+                    settings.MemoryTokenBudget is < 0 or > 2000 ||
                     examples.Length > 30 || examples.Any(e => !ValidExample(e)))
                     throw new InvalidDataException();
                 var instruction = prompt;
@@ -91,6 +94,7 @@ public sealed class ChatConfiguration
                         instruction += "\n[Окремий приклад]\n" + example + "\n";
                     instruction += "\n[Кінець прикладів. Далі — справжня поточна розмова.]";
                 }
+                instruction += "\n\n" + ChatReplyFormat.Instruction;
                 current = new(instruction, settings, hash[..12], examples.Length);
                 log.LogInformation("Chat configuration loaded; directory {Directory}; SHA {Hash}; examples {Examples}; model {Model}",
                     DirectoryPath, current.Hash, examples.Length, settings.Model);

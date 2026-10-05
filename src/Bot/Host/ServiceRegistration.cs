@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Trivozhno.Features.Confessions;
 using Trivozhno.Features.Conversation;
 using Trivozhno.Features.Mood;
+using Trivozhno.Features.Memory;
 using Trivozhno.Features.Navigation;
 using Trivozhno.Features.Reminders;
 using Trivozhno.Features.Settings;
@@ -26,7 +27,7 @@ public static class ServiceRegistration
         services.AddHttpClient<IAiClient, GroqClient>(c => c.Timeout = Timeout.InfiniteTimeSpan).RemoveAllLoggers();
         // Deterministic book search remains an operator utility, not chat context.
         services.AddScoped<IKnowledgeRetriever, KnowledgeRetriever>();
-        services.AddSingleton<ChatConfiguration>(); services.AddScoped<ChatHistory>();
+        services.AddSingleton<ChatConfiguration>(); services.AddScoped<ChatHistory>(); services.AddScoped<ChatMemory>();
         services.AddScoped<ChatResponder>();
         services.AddScoped<BookImporter>(); services.AddScoped<Ui>(); services.AddScoped<DraftStore>(); services.AddScoped<Router>();
         services.AddScoped<ConversationHandler>(); services.AddScoped<ConfessionHandler>(); services.AddScoped<MoodHandler>();

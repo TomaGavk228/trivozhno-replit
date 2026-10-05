@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Trivozhno.Features.Navigation;
+using Trivozhno.Features.Memory;
 using Trivozhno.Host;
 using Trivozhno.Infrastructure.Persistence;
 using Trivozhno.Infrastructure.Telegram;
@@ -21,6 +22,7 @@ public sealed class ConversationHandler(BotDb db, Ui ui, IClock clock, BotOption
         if (!u.AiNoticeShown) { u.AiNoticeShown = true; ui.Say(u, "chat.notice"); }
 
         var now = clock.UtcNow;
+        u.ChatStyleProfile = ChatStyleProfile.Apply(u.ChatStyleProfile, ChatStyleProfile.ExplicitDelta(input.Text!));
         var session = await db.Sessions.SingleAsync(x => x.Id == u.SessionId, ct);
         var recent = await db.Messages
             .Where(x => x.UserId == u.Id &&

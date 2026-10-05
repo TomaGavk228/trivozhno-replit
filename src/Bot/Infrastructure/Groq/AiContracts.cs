@@ -10,7 +10,11 @@ public sealed record AiResult(
     int PromptTokens = 0,
     int CompletionTokens = 0,
     int ReasoningTokens = 0,
-    int CachedTokens = 0);
+    int CachedTokens = 0)
+{
+    public string ConversationState { get; init; } = "";
+    public IReadOnlyList<Trivozhno.Features.Memory.MemoryUpdate> MemoryUpdates { get; init; } = [];
+}
 public interface IAiClient
 {
     Task<AiResult> Complete(IReadOnlyList<AiMessage> messages,

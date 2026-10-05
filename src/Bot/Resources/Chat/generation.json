@@ -1,9 +1,10 @@
 {
   "model": "openai/gpt-oss-120b",
-  "reasoningEffort": "low",
-  "temperature": 0.8,
+  "reasoningEffort": "medium",
+  "temperature": 0.6,
   "topP": 1.0,
-  "maxCompletionTokens": 1200,
+  "maxCompletionTokens": 1600,
   "inputTokenBudget": 6000,
-  "historyTurns": 16
+  "historyTurns": 16,
+  "memoryTokenBudget": 1000
 }

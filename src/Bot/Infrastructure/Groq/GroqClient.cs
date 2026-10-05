@@ -1,13 +1,15 @@
 using System.Net;
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Trivozhno.Features.Conversation;
+using Trivozhno.Features.Memory;
 using Trivozhno.Host;
 
 namespace Trivozhno.Infrastructure.Groq;
 
-// Plain chat completion. Retries are for HTTP 429/5xx only, on the same model.
+// One structured completion for reply and continuity. HTTP retries use the same model.
 public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quota, ILogger<GroqClient> log) : IAiClient
 {
     public async Task<AiResult> Complete(IReadOnlyList<AiMessage> messages, ChatGenerationSettings settings, CancellationToken ct)
@@ -15,11 +17,15 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
         budget.CancelAfter(TimeSpan.FromSeconds(options.JobBudget));
         var token = budget.Token;
+        var phase = Stopwatch.StartNew();
         using var slot = await quota.Enter(token);
-        var estimate = TokenEstimate.Count(messages);
+        var slotMs = phase.ElapsedMilliseconds;
+        var estimate = TokenEstimate.Count(messages) + ChatReplyFormat.FormatTokens(settings.Model);
         for (var attempt = 0; attempt < 3; attempt++)
         {
+            phase.Restart();
             var reservation = await quota.Reserve(settings.Model, estimate + settings.MaxCompletionTokens, false, token, estimate);
+            var quotaMs = phase.ElapsedMilliseconds;
             var settled = false;
             try
             {
@@ -32,6 +38,7 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
                     ["temperature"] = settings.Temperature,
                     ["top_p"] = settings.TopP,
                     ["max_completion_tokens"] = settings.MaxCompletionTokens,
+                    ["response_format"] = ChatReplyFormat.ResponseFormat(settings.Model),
                     ["stream"] = false
                 };
                 if (settings.ReasoningEffort is not null)
@@ -46,7 +53,10 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
                 request.Content = JsonContent.Create(payload);
                 log.LogInformation("Groq text request; model {Model}; reasoning {Effort}; input estimate {Input}; output ceiling {Output}; attempt {Attempt}",
                     settings.Model, settings.ReasoningEffort ?? "default", estimate, settings.MaxCompletionTokens, attempt + 1);
+                phase.Restart();
                 using var response = await http.SendAsync(request, timeout.Token);
+                log.LogInformation("Groq timing; model {Model}; attempt {Attempt}; slot wait {SlotMs} ms; quota wait {QuotaMs} ms; HTTP {HttpMs} ms",
+                    settings.Model, attempt + 1, slotMs, quotaMs, phase.ElapsedMilliseconds);
                 log.LogInformation("Groq HTTP {Status}; model {Model}", (int)response.StatusCode, settings.Model);
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 {
@@ -103,7 +113,8 @@ public sealed class GroqClient(HttpClient http, BotOptions options, AiQuota quot
                     throw new AiUnavailableException("invalid_response");
                 log.LogInformation("Groq text response; model {Model}; prompt {Prompt}; completion {Completion}; reasoning {Reasoning}; cached {Cached}",
                     settings.Model, prompt, completion, reasoning, cached);
-                return result with { Text = content };
+                var reply = ChatReplyFormat.Parse(content);
+                return result with { Text = reply.Reply, ConversationState = reply.ConversationState, MemoryUpdates = reply.MemoryUpdates };
             }
             finally
             {

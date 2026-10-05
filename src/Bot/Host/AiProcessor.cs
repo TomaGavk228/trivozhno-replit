@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Trivozhno.Features.Conversation;
+using Trivozhno.Features.Memory;
 using Trivozhno.Features.Navigation;
 using Trivozhno.Infrastructure.Groq;
 using Trivozhno.Infrastructure.Persistence;
@@ -145,8 +147,9 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
                     MemoryVersion = job.MemoryVersion,
                     CreatedAt = clock.UtcNow,
                     MoodDerived = false,
-                    SourcesJson = "[]"
+                    SourcesJson = JsonSerializer.Serialize(new { conversation_state = result.ConversationState, sources = Array.Empty<object>() }, ChatReplyFormat.Json)
                 });
+                await scope.ServiceProvider.GetRequiredService<ChatMemory>().Save(u, current, result.MemoryUpdates, ct);
                 ui.Text(u, result.Text, ui.Reply("chat.end"), "ai", job.SessionId, job.MemoryVersion,
                     turnRevision: job.TurnRevision, replyToId: job.Id);
             }

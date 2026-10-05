@@ -2,7 +2,7 @@ using Trivozhno.Infrastructure.Groq;
 
 namespace Trivozhno.Features.Conversation;
 
-// One text generation. No planner, canned greeting, quality rewrite or extract replacement.
+// One generation: visible reply plus continuity metadata. No rewrite pass.
 public sealed class ChatResponder(IAiClient ai)
 {
     public Task<AiResult> Reply(ChatContext context, CancellationToken ct) =>
