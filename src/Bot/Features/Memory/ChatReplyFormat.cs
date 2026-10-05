@@ -51,7 +51,15 @@ public static class ChatReplyFormat
 
     // Z.ai JSON mode does not take json_schema; describe the contract in the prompt.
     public static string InstructionFor(string model) => model.StartsWith("glm-", StringComparison.Ordinal)
-        ? Instruction + "\nОбов’язкова структура JSON (усі три поля потрібні; memory_updates може бути []):\n" + Schema.GetRawText()
+        ? Instruction + """
+
+
+            Поверни саме відповідь у JSON-об'єкті, без Markdown та опису JSON-схеми. Формат:
+            {"reply":"текст відповіді людині","conversation_state":"короткий стан розмови","memory_updates":[]}
+            Заміни тексти-заповнювачі власною відповіддю і станом. reply і conversation_state — рядки, не об'єкти чи масиви.
+            memory_updates — масив об'єктів з рядками key та quote; якщо нових тривалих фактів немає, поверни [].
+            Усі три поля мають бути в цьому єдиному JSON-об'єкті. Жодного тексту поза JSON.
+            """
         : Instruction;
 
     public static ChatReply Parse(string content)
@@ -66,6 +74,65 @@ public static class ChatReplyFormat
             return result with { Reply = result.Reply.Trim(), ConversationState = Clip(result.ConversationState.Trim(), 900) };
         }
         catch (JsonException) { throw new AiUnavailableException("invalid_chat_envelope"); }
+    }
+
+    // JSON mode guarantees neither the schema nor the presence of metadata.
+    // A usable reply must survive malformed optional metadata; never show raw JSON.
+    public static ChatReply ParseZai(string content, out string shape, out bool metadataIgnored)
+    {
+        shape = "invalid_json";
+        metadataIgnored = false;
+        try
+        {
+            var text = content.Trim();
+            // Accept only a fence around the entire JSON, not JSON extracted from prose.
+            if (text.StartsWith("```json\n", StringComparison.OrdinalIgnoreCase) && text.EndsWith("```", StringComparison.Ordinal))
+                text = text[8..^3].Trim();
+            else if (text.StartsWith("```\n", StringComparison.Ordinal) && text.EndsWith("```", StringComparison.Ordinal))
+                text = text[4..^3].Trim();
+
+            using var json = JsonDocument.Parse(text);
+            var root = json.RootElement;
+            var reply = Field(root, "reply");
+            var state = Field(root, "conversation_state", "conversationState");
+            var updates = Field(root, "memory_updates", "memoryUpdates");
+            // Only fixed labels and JSON types, never user/model text or unknown keys.
+            shape = $"root={root.ValueKind}; reply={reply.ValueKind}; conversation_state={state.ValueKind}; memory_updates={updates.ValueKind}";
+            if (reply.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(reply.GetString()))
+                throw new AiUnavailableException("invalid_chat_envelope");
+
+            metadataIgnored = state.ValueKind != JsonValueKind.String || updates.ValueKind != JsonValueKind.Array;
+            var memory = new List<MemoryUpdate>();
+            if (updates.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in updates.EnumerateArray())
+                {
+                    var key = Field(item, "key");
+                    var quote = Field(item, "quote");
+                    if (key.ValueKind != JsonValueKind.String || quote.ValueKind != JsonValueKind.String ||
+                        string.IsNullOrWhiteSpace(key.GetString()) || string.IsNullOrWhiteSpace(quote.GetString()))
+                    {
+                        metadataIgnored = true;
+                        continue;
+                    }
+                    memory.Add(new(key.GetString()!, quote.GetString()!));
+                }
+            }
+            return new(reply.GetString()!.Trim(), state.ValueKind == JsonValueKind.String
+                ? Clip(state.GetString()!.Trim(), 900) : "", memory.ToArray());
+        }
+        catch (JsonException) { throw new AiUnavailableException("invalid_chat_envelope"); }
+    }
+
+    private static JsonElement Field(JsonElement value, string name, string? alias = null)
+    {
+        if (value.ValueKind != JsonValueKind.Object) return default;
+        if (value.TryGetProperty(name, out var field)) return field;
+        foreach (var property in value.EnumerateObject())
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase) ||
+                alias is not null && string.Equals(property.Name, alias, StringComparison.OrdinalIgnoreCase))
+                return property.Value;
+        return default;
     }
 
     public static string Clip(string text, int length)

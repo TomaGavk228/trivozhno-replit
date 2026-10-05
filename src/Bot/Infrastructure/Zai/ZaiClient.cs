@@ -163,7 +163,19 @@ public sealed class ZaiClient(HttpClient http, BotOptions options, ZaiRequestGat
                 throw new AiUnavailableException("invalid_response");
             log.LogInformation("Z.ai text response; model {Model}; prompt {Prompt}; completion {Completion}; reasoning {Reasoning}; cached {Cached}; usage reported {Reported}",
                 settings.Model, prompt, completion, reasoning, cached, hasUsage);
-            var reply = ChatReplyFormat.Parse(content);
+            ChatReply reply;
+            var shape = "invalid_json";
+            try
+            {
+                reply = ChatReplyFormat.ParseZai(content, out shape, out var metadataIgnored);
+                if (metadataIgnored)
+                    log.LogWarning("Z.ai chat metadata ignored; {Shape}", shape);
+            }
+            catch (AiUnavailableException)
+            {
+                log.LogWarning("Z.ai invalid chat envelope; {Shape}", shape);
+                throw;
+            }
             return result with { Text = reply.Reply, ConversationState = reply.ConversationState, MemoryUpdates = reply.MemoryUpdates };
         }
         throw new AiUnavailableException();

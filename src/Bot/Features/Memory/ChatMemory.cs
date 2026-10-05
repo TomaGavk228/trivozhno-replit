@@ -32,14 +32,18 @@ public sealed class ChatMemory(BotDb db)
 
         // Only metadata of completely delivered replies can describe what the
         // bot already offered. Superseded or partially delivered drafts cannot.
-        var last = await db.Messages.AsNoTracking().Where(x =>
+        // If a JSON-mode reply omitted state, retain the last valid delivered
+        // state with its original timestamp instead of silently losing continuity.
+        var recent = await db.Messages.AsNoTracking().Where(x =>
                 x.UserId == user.Id && x.MemoryVersion == current.MemoryVersion &&
                 x.Role == "assistant" && x.Status == "done" && !x.MoodDerived && x.ReplyToId < current.Id &&
                 !db.Outbox.Any(o => o.Kind == "ai" && o.UserId == user.Id && o.ReplyToId == x.ReplyToId && o.Status != "sent"))
             .OrderByDescending(x => x.SessionId == current.SessionId).ThenByDescending(x => x.ReplyToId)
-            .Select(x => new { x.SourcesJson, x.CreatedAt, x.SessionId }).FirstOrDefaultAsync(ct);
-        var state = ReadState(last?.SourcesJson);
-        var hasState = state.Length > 0 && Add($"Стан {(last!.SessionId == current.SessionId ? "цієї" : "попередньої")} розмови ({last.CreatedAt:u}):\n" +
+            .Select(x => new { x.SourcesJson, x.CreatedAt, x.SessionId }).Take(32).ToListAsync(ct);
+        var last = recent.Select(x => new { Message = x, State = ReadState(x.SourcesJson) })
+            .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.State));
+        var state = last?.State ?? "";
+        var hasState = state.Length > 0 && Add($"Стан {(last!.Message.SessionId == current.SessionId ? "цієї" : "попередньої")} розмови ({last.Message.CreatedAt:u}):\n" +
             ChatReplyFormat.ToTokenBudget(state, Math.Min(220, Math.Max(0, budget / 3))));
         var preferences = ChatStyleProfile.Prompt(user.ChatStyleProfile);
         if (preferences.Length > 0) Add("Явно висловлені вподобання: " + preferences);
