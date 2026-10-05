@@ -11,6 +11,7 @@ using Trivozhno.Infrastructure.Knowledge;
 using Trivozhno.Infrastructure.Persistence;
 using Trivozhno.Infrastructure.Telegram;
 using Trivozhno.Infrastructure.Zai;
+using Trivozhno.Infrastructure.Gemini;
 using Trivozhno.Resources;
 
 namespace Trivozhno.Host;
@@ -25,7 +26,12 @@ public static class ServiceRegistration
         // Suppress HttpClient URLs (Telegram embeds the secret in the path) and SQL payloads.
         services.AddLogging(b => { b.AddFilter("System.Net.Http.HttpClient", LogLevel.None); b.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.None); });
         services.AddHttpClient<ITelegramClient, TelegramClient>(c => c.Timeout = TimeSpan.FromSeconds(40)).RemoveAllLoggers();
-        if (options.IsZai)
+        if (options.IsGemini)
+        {
+            services.AddSingleton<GeminiRequestGate>();
+            services.AddHttpClient<IAiClient, GeminiClient>(c => c.Timeout = Timeout.InfiniteTimeSpan).RemoveAllLoggers();
+        }
+        else if (options.IsZai)
         {
             services.AddSingleton<ZaiRequestGate>();
             services.AddHttpClient<IAiClient, ZaiClient>(c => c.Timeout = Timeout.InfiniteTimeSpan).RemoveAllLoggers();

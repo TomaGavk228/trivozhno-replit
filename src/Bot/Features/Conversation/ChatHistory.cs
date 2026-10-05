@@ -15,8 +15,8 @@ public sealed class ChatHistory(BotDb db, ChatConfiguration configuration, BotOp
         var snapshot = configuration.Read();
         var settings = snapshot.Generation;
         options.ValidateModel(settings.Model);
-        // Z.ai admission is based on its own concurrency/429 responses, not Groq quotas.
-        var providerInputLimit = options.IsZai ? settings.InputTokenBudget :
+        // Google/Z.ai use their own concurrency/429 responses, not Groq quotas.
+        var providerInputLimit = options.AiProvider != "groq" ? settings.InputTokenBudget :
             Math.Min(options.TokensPerMinute, options.TokensPerDay) - settings.MaxCompletionTokens - 128;
         var limit = Math.Min(settings.InputTokenBudget, providerInputLimit) - ChatReplyFormat.FormatTokens(settings.Model);
         var instruction = new AiMessage("system", snapshot.Instruction);
@@ -41,9 +41,9 @@ public sealed class ChatHistory(BotDb db, ChatConfiguration configuration, BotOp
         var included = new List<ChatMessage>();
         foreach (var group in groups)
         {
-            // GLM sees the same transport format it must generate. Stored and
+            // JSON providers see the same transport format they must generate. Stored and
             // delivered messages stay plain text; this wrapping is only for the API.
-            string AssistantContent(ChatMessage message) => options.IsZai
+            string AssistantContent(ChatMessage message) => options.IsZai || options.IsGemini
                 ? System.Text.Json.JsonSerializer.Serialize(new ChatReply(message.Text,
                     ChatMemory.ReadState(message.SourcesJson), []), ChatReplyFormat.Json)
                 : message.Text;

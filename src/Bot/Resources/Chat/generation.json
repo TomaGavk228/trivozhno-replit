@@ -1,7 +1,7 @@
 {
-  "model": "glm-4.7-flash",
-  "reasoningEffort": "none",
-  "temperature": 0.7,
+  "model": "gemini-3.5-flash-lite",
+  "reasoningEffort": "minimal",
+  "temperature": 1.0,
   "topP": 0.95,
   "maxCompletionTokens": 1600,
   "inputTokenBudget": 6000,

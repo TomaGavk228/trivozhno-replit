@@ -47,7 +47,10 @@ public static class ChatReplyFormat
         ? new { type = "json_schema", json_schema = new { name = "friend_chat", strict = true, schema = Schema } }
         : (object)new { type = "json_object" };
 
-    public static int FormatTokens(string model) => TokenEstimate.Count(JsonSerializer.Serialize(ResponseFormat(model))) + 24;
+    public static object GeminiResponseFormat() => new { text = new { mimeType = "APPLICATION_JSON", schema = Schema } };
+
+    public static int FormatTokens(string model) => TokenEstimate.Count(JsonSerializer.Serialize(
+        model.StartsWith("gemini-", StringComparison.Ordinal) ? GeminiResponseFormat() : ResponseFormat(model))) + 24;
 
     // Z.ai JSON mode does not take json_schema; describe the contract in the prompt.
     public static string InstructionFor(string model) => model.StartsWith("glm-", StringComparison.Ordinal)

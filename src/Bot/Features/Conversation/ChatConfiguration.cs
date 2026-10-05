@@ -73,7 +73,8 @@ public sealed class ChatConfiguration
                     .Split("\n---\n", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
                 if (prompt.Length is < 40 or > 20_000 || settings is null ||
                     string.IsNullOrWhiteSpace(settings.Model) || settings.Model.Length > 100 ||
-                    settings.ReasoningEffort is not (null or "low" or "medium" or "high" or "none" or "default") ||
+                    settings.ReasoningEffort is not (null or "minimal" or "low" or "medium" or "high" or "none" or "default") ||
+                    (settings.ReasoningEffort == "minimal" && !settings.Model.StartsWith("gemini-", StringComparison.Ordinal)) ||
                     (settings.Model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal) &&
                         settings.ReasoningEffort is not ("low" or "medium" or "high")) ||
                     !double.IsFinite(settings.Temperature) || settings.Temperature is < 0 or > 2 ||
