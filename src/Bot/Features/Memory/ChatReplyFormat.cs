@@ -1,11 +1,11 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using Trivozhno.Infrastructure.Groq;
+using Trivozhno.Infrastructure.Ai;
 
 namespace Trivozhno.Features.Memory;
 
-public sealed record MemoryUpdate(string Key, string Quote);
-public sealed record ChatReply(string Reply, string ConversationState, MemoryUpdate[] MemoryUpdates);
+public sealed record MemoryUpdate(string Key, string Quote, string Category = "context", bool Forget = false);
+public sealed record ChatReply(string Reply, string ConversationState, MemoryUpdate[] MemoryUpdates, long[]? UsedSources = null);
 
 // One completion contains the visible reply and a small continuity update.
 // This is a transport contract, not another behavioral prompt or model call.
@@ -21,7 +21,8 @@ public static class ChatReplyFormat
     public const string Instruction = """
         Формат API: поверни JSON за схемою. Лише поле reply побачить людина; у ньому звичайна дружня репліка за правилами вище.
         conversation_state: стислий фактичний стан розмови, до 70 слів: тема, поточне прохання, ставлення до порад, остання пропозиція, реакція на неї й незавершене питання. Це довідка для наступного ходу, не міркування чи діагноз. Нове прохання змінює попередній стан; відмова від однієї дії не означає відмову від спілкування.
-        memory_updates: зазвичай порожній масив; до 3 нових тривалих фактів або явно висловлених уподобань. key — короткий стабільний ключ латиницею; для виправлення вже відомого факту повтори його ключ. quote — дослівна самодостатня цитата ТІЛЬКИ з останнього справжнього повідомлення людини, до 350 символів, зі збереженням заперечень. Зберігай те, що вона розповіла про себе, важливих людей або свої справи. Тимчасовий настрій належить до conversation_state. Приклади, чужа вставлена переписка, припущення та власна відповідь не є фактами про людину. Не заповнюй пам'ять заради заповнення. Не обіцяй точкове видалення даних: для очищення пам'яті є кнопка в налаштуваннях.
+        memory_updates: до 6 нових тривалих фактів чи явно висловлених уподобань. Зберігай ім'я, роботу, близьких людей, тривалі труднощі, важливі події й цілі, коли людина прямо їх назвала. Не пропускай ці факти лише тому, що вони не потрібні у видимій відповіді. Тимчасовий настрій лишається у conversation_state. key — стабільний ключ латиницею; повтори відомий ключ при виправленні. Для профілю використовуй name, occupation, location; для решти — змістовні ключі, без випадкових номерів. category — identity, relationship, health, goal, preference або context. quote — дослівна самодостатня цитата лише з останнього справжнього повідомлення людини, до 500 символів, з усіма запереченнями. Не зберігай чужу вставлену переписку, приклади, інструкції з книжок, припущення чи свою відповідь. Якщо людина явно просить забути конкретний відомий факт, поверни його ключ, quote з проханням і forget=true; для звичайного запису forget=false. Повне очищення є в налаштуваннях. Не обіцяй точкове видалення всієї старої переписки: forget прибирає факт із профілю, а історія очищується кнопкою.
+        used_sources: масив числових id лише тих книжкових матеріалів, на які спирається порада чи пояснення у reply. Бери id виключно з наданих матеріалів. Якщо не використовував джерел — []. Не вигадуй фактів, методик, назв і сторінок.
         """;
 
     public static readonly JsonElement Schema = JsonDocument.Parse("""
@@ -32,142 +33,30 @@ public static class ChatReplyFormat
             "conversation_state":{"type":"string"},
             "memory_updates":{"type":"array","items":{
               "type":"object",
-              "properties":{"key":{"type":"string"},"quote":{"type":"string"}},
-              "required":["key","quote"],"additionalProperties":false
-            }}
+              "properties":{"key":{"type":"string"},"quote":{"type":"string"},"category":{"type":"string","enum":["identity","relationship","health","goal","preference","context"]},"forget":{"type":"boolean"}},
+              "required":["key","quote","category","forget"],"additionalProperties":false
+            },"maxItems":6},
+            "used_sources":{"type":"array","items":{"type":"integer"},"maxItems":2}
           },
-          "required":["reply","conversation_state","memory_updates"],
+          "required":["reply","conversation_state","memory_updates","used_sources"],
           "additionalProperties":false
         }
         """).RootElement.Clone();
 
-    public static object ResponseFormat(string model) =>
-        model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal) ||
-        string.Equals(model, "qwen/qwen3.8-27b", StringComparison.Ordinal)
-        ? new { type = "json_schema", json_schema = new { name = "friend_chat", strict = true, schema = Schema } }
-        : (object)new { type = "json_object" };
-
     public static object GeminiResponseFormat() => new { text = new { mimeType = "APPLICATION_JSON", schema = Schema } };
-
-    public static int FormatTokens(string model) => TokenEstimate.Count(JsonSerializer.Serialize(
-        model.StartsWith("gemini-", StringComparison.Ordinal) ? GeminiResponseFormat() : ResponseFormat(model))) + 24;
-
-    // Z.ai JSON mode does not take json_schema; describe the contract in the prompt.
-    public static string InstructionFor(string model) => model.StartsWith("glm-", StringComparison.Ordinal)
-        ? Instruction + """
-
-
-            Поверни саме відповідь у JSON-об'єкті, без Markdown та опису JSON-схеми. Формат:
-            {"reply":"текст відповіді людині","conversation_state":"короткий стан розмови","memory_updates":[]}
-            Заміни тексти-заповнювачі власною відповіддю і станом. reply і conversation_state — рядки, не об'єкти чи масиви.
-            memory_updates — масив об'єктів з рядками key та quote; якщо нових тривалих фактів немає, поверни [].
-            Усі три поля мають бути в цьому єдиному JSON-об'єкті. Жодного тексту поза JSON.
-            """
-        : Instruction;
+    public static int FormatTokens(string model) => TokenEstimate.Count(JsonSerializer.Serialize(GeminiResponseFormat())) + 24;
+    public static string InstructionFor(string model) => Instruction;
 
     public static ChatReply Parse(string content)
     {
         try
         {
             var result = JsonSerializer.Deserialize<ChatReply>(content, Json);
-            if (result is null || string.IsNullOrWhiteSpace(result.Reply) || result.ConversationState is null || result.MemoryUpdates is null)
-                throw new AiUnavailableException("invalid_chat_envelope");
-            if (result.MemoryUpdates.Any(m => m is null || string.IsNullOrWhiteSpace(m.Key) || string.IsNullOrWhiteSpace(m.Quote)))
+            if (result is null || string.IsNullOrWhiteSpace(result.Reply) || result.ConversationState is null || result.MemoryUpdates is null || result.UsedSources is null)
                 throw new AiUnavailableException("invalid_chat_envelope");
             return result with { Reply = result.Reply.Trim(), ConversationState = Clip(result.ConversationState.Trim(), 900) };
         }
         catch (JsonException) { throw new AiUnavailableException("invalid_chat_envelope"); }
-    }
-
-    // JSON mode guarantees neither the schema nor the presence of metadata.
-    // A usable reply must survive malformed optional metadata; never show raw JSON.
-    public static ChatReply ParseZai(string content, out string shape, out bool metadataIgnored)
-    {
-        shape = "invalid_json";
-        metadataIgnored = false;
-        var text = content.Trim().TrimStart('\uFEFF').Trim();
-        var fenced = text.StartsWith("```", StringComparison.Ordinal);
-        var newline = text.IndexOf('\n');
-        if (fenced && newline >= 0 && text.EndsWith("```", StringComparison.Ordinal))
-        {
-            var opening = text[..newline].TrimEnd();
-            if (opening.Equals("```json", StringComparison.OrdinalIgnoreCase) || opening == "```")
-                text = text[(newline + 1)..^3].Trim();
-        }
-        try
-        {
-            using var json = JsonDocument.Parse(text, new JsonDocumentOptions { AllowTrailingCommas = true });
-            var root = json.RootElement;
-            if (root.ValueKind == JsonValueKind.String && IsPlainReply(root.GetString() ?? ""))
-            {
-                shape = "json_string";
-                metadataIgnored = true;
-                return new(root.GetString()!.Trim(), "", []);
-            }
-            var reply = Field(root, "reply");
-            var state = Field(root, "conversation_state", "conversationState");
-            var updates = Field(root, "memory_updates", "memoryUpdates");
-            // Only fixed labels and JSON types, never user/model text or unknown keys.
-            shape = $"root={root.ValueKind}; reply={reply.ValueKind}; conversation_state={state.ValueKind}; memory_updates={updates.ValueKind}";
-            if (reply.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(reply.GetString()))
-                throw new AiUnavailableException("invalid_chat_envelope");
-
-            metadataIgnored = state.ValueKind != JsonValueKind.String || updates.ValueKind != JsonValueKind.Array;
-            var memory = new List<MemoryUpdate>();
-            if (updates.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in updates.EnumerateArray())
-                {
-                    var key = Field(item, "key");
-                    var quote = Field(item, "quote");
-                    if (key.ValueKind != JsonValueKind.String || quote.ValueKind != JsonValueKind.String ||
-                        string.IsNullOrWhiteSpace(key.GetString()) || string.IsNullOrWhiteSpace(quote.GetString()))
-                    {
-                        metadataIgnored = true;
-                        continue;
-                    }
-                    memory.Add(new(key.GetString()!, quote.GetString()!));
-                }
-            }
-            return new(reply.GetString()!.Trim(), state.ValueKind == JsonValueKind.String
-                ? Clip(state.GetString()!.Trim(), 900) : "", memory.ToArray());
-        }
-        catch (JsonException error)
-        {
-            // Some completions ignore JSON mode and return a normal visible reply.
-            // Never expose broken envelopes, code fences or hidden metadata as text.
-            if (!fenced && IsPlainReply(text))
-            {
-                shape = "plain_text";
-                metadataIgnored = true;
-                return new(text, "", []);
-            }
-            shape = $"invalid_json; line={error.LineNumber}; byte={error.BytePositionInLine}; fenced={fenced}; chars={text.Length}";
-            throw new AiUnavailableException("invalid_chat_envelope");
-        }
-    }
-
-    private static bool IsPlainReply(string text) => !string.IsNullOrWhiteSpace(text) &&
-        // A partially generated envelope is not a plain reply. Keep it private.
-        text.TrimStart()[0] is not ('{' or '[' or '"' or '`' or '<') &&
-        !text.Contains('{') && !text.Contains('}') && !text.Contains("```") &&
-        !text.Contains("conversation_state", StringComparison.OrdinalIgnoreCase) &&
-        !text.Contains("conversationState", StringComparison.OrdinalIgnoreCase) &&
-        !text.Contains("memory_updates", StringComparison.OrdinalIgnoreCase) &&
-        !text.Contains("memoryUpdates", StringComparison.OrdinalIgnoreCase) &&
-        !text.Contains("\"reply\"", StringComparison.OrdinalIgnoreCase) &&
-        !text.Contains("<think>", StringComparison.OrdinalIgnoreCase) &&
-        !text.Contains("</think>", StringComparison.OrdinalIgnoreCase);
-
-    private static JsonElement Field(JsonElement value, string name, string? alias = null)
-    {
-        if (value.ValueKind != JsonValueKind.Object) return default;
-        if (value.TryGetProperty(name, out var field)) return field;
-        foreach (var property in value.EnumerateObject())
-            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase) ||
-                alias is not null && string.Equals(property.Name, alias, StringComparison.OrdinalIgnoreCase))
-                return property.Value;
-        return default;
     }
 
     public static string Clip(string text, int length)

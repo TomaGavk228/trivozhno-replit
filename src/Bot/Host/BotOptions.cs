@@ -6,26 +6,15 @@ public sealed class BotOptions
 {
     public string Database { get; init; } = "";
     public string TelegramToken { get; init; } = "";
-    public string GroqKey { get; init; } = "";
-    public string AiProvider { get; init; } = "gemini";
     public string GeminiKey { get; init; } = "";
-    public int GeminiConcurrency { get; init; } = 1;
-    public bool IsGemini => AiProvider == "gemini";
-    public string ZaiKey { get; init; } = "";
-    public int ZaiConcurrency { get; init; } = 1;
-    public bool IsZai => AiProvider == "zai";
     public long ChannelId { get; init; }
     public int AiConcurrency { get; init; } = 2;
     public int AiTimeout { get; init; } = 45;
     public int JobBudget { get; init; } = 100;
     public int QueueWait { get; init; } = 300;
-    public int RequestsPerMinute { get; init; } = 25;
-    public int TokensPerMinute { get; init; } = 8000;
-    public int RequestsPerDay { get; init; } = 900;
-    public int TokensPerDay { get; init; } = 190000;
     public int MaxQueue { get; init; } = 10000;
     public int MaxUserAiQueue { get; init; } = 20;
-    public int ChatQuietMilliseconds { get; init; } = 1200;
+    public int ChatQuietMilliseconds { get; init; } = 900;
     public int ChatGatherMilliseconds { get; init; } = 3000;
     public int TelegramPerSecond { get; init; } = 20;
     public int TelegramChatMilliseconds { get; init; } = 1100;
@@ -41,18 +30,13 @@ public sealed class BotOptions
     public static BotOptions Load(IConfiguration c) => new()
     {
         Database = c["DATABASE_URL"] ?? "", TelegramToken = c["TELEGRAM_BOT_TOKEN"] ?? "",
-        GroqKey = c["GROQ_API_KEY"] ?? "", ChannelId = long.TryParse(c["CONFESSIONS_CHANNEL_ID"], out var id) ? id : 0,
-        AiProvider = (c["AI_PROVIDER"] ?? "gemini").Trim().ToLowerInvariant(), ZaiKey = c["ZAI_API_KEY"] ?? "",
+        ChannelId = long.TryParse(c["CONFESSIONS_CHANNEL_ID"], out var id) ? id : 0,
         GeminiKey = (c["GEMINI_API_KEY"] ?? c["GOOGLE_API_KEY"] ?? "").Trim(),
-        GeminiConcurrency = Int(c, "GEMINI_MAX_CONCURRENCY", 1, 1, 16),
-        ZaiConcurrency = Int(c, "ZAI_MAX_CONCURRENCY", 1, 1, 16),
         AiConcurrency = Int(c, "AI_MAX_CONCURRENCY", 2, 1, 16), AiTimeout = Int(c, "AI_TIMEOUT_SECONDS", 45, 1, 120),
         JobBudget = Int(c, "AI_JOB_BUDGET_SECONDS", 100, 10, 300), QueueWait = Int(c, "AI_MAX_QUEUE_WAIT_SECONDS", 300, 10, 3600),
-        RequestsPerMinute = Int(c, "GROQ_RPM", 25, 1, 100000), TokensPerMinute = Int(c, "GROQ_TPM", 8000, 2000, 10000000),
-        RequestsPerDay = Int(c, "GROQ_RPD", 900, 1, 10000000), TokensPerDay = Int(c, "GROQ_TPD", 190000, 2000, 100000000),
         MaxQueue = Int(c, "MAX_INBOX_QUEUE", 10000, 100, 100000),
         MaxUserAiQueue = Int(c, "MAX_USER_AI_QUEUE", 20, 1, 100),
-        ChatQuietMilliseconds = Int(c, "CHAT_QUIET_MS", 1200, 300, 3000),
+        ChatQuietMilliseconds = Int(c, "CHAT_QUIET_MS", 900, 300, 3000),
         ChatGatherMilliseconds = Int(c, "CHAT_MAX_GATHER_MS", 3000, 1200, 10000),
         ChunkSize = Int(c, "BOOK_CHUNK_CHARS", 1800, 1200, 2200), ChunkOverlap = Int(c, "BOOK_CHUNK_OVERLAP", 180, 0, 300),
         Timezone = c["BOT_TIMEZONE"] ?? "Europe/Kyiv", Conversation = Flag(c, "FEATURE_CONVERSATION"),
@@ -63,29 +47,20 @@ public sealed class BotOptions
     private static bool Flag(IConfiguration c, string key) => c[key] is null || c[key] is "1" or "true";
     public void Validate(bool live)
     {
-        if (AiProvider is not ("gemini" or "zai" or "groq")) throw new InvalidOperationException("Invalid AI_PROVIDER. Use gemini, zai or groq.");
         if (string.IsNullOrWhiteSpace(Database)) throw new InvalidOperationException("Set DATABASE_URL in Secrets.");
         _ = ConnectionStrings.Parse(Database);
         _ = TimeZoneInfo.FindSystemTimeZoneById(Timezone);
         if (!live) return;
         if (string.IsNullOrWhiteSpace(TelegramToken)) throw new InvalidOperationException("Set TELEGRAM_BOT_TOKEN in Secrets.");
-        if (Conversation && string.IsNullOrWhiteSpace(IsGemini ? GeminiKey : IsZai ? ZaiKey : GroqKey))
-            throw new InvalidOperationException(IsGemini ? "Set GEMINI_API_KEY in Secrets." :
-                IsZai ? "Set ZAI_API_KEY in Secrets." : "Set GROQ_API_KEY in Secrets.");
+        if (Conversation && string.IsNullOrWhiteSpace(GeminiKey))
+            throw new InvalidOperationException("Set GEMINI_API_KEY in Secrets.");
         if (Confessions && ChannelId >= 0) throw new InvalidOperationException("Set negative CONFESSIONS_CHANNEL_ID in Secrets.");
     }
 
     public void ValidateModel(string model)
     {
-        var valid = AiProvider switch
-        {
-            "gemini" => model == "gemini-3.5-flash-lite",
-            "zai" => model.StartsWith("glm-", StringComparison.Ordinal),
-            "groq" => !model.StartsWith("glm-", StringComparison.Ordinal) && !model.StartsWith("gemini-", StringComparison.Ordinal),
-            _ => false
-        };
-        if (!valid) throw new InvalidOperationException(
-            "Invalid AI_PROVIDER/model combination. For gemini use gemini-3.5-flash-lite in generation.json; for zai use glm-4.7-flash.");
+        if (model != "gemini-3.5-flash-lite")
+            throw new InvalidOperationException("Invalid model. Use gemini-3.5-flash-lite in generation.json.");
     }
 }
 

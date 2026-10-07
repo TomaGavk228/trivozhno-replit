@@ -1,10 +1,10 @@
 {
   "model": "gemini-3.5-flash-lite",
-  "reasoningEffort": "minimal",
+  "reasoningEffort": "low",
   "temperature": 1.0,
   "topP": 0.95,
-  "maxCompletionTokens": 1600,
-  "inputTokenBudget": 16000,
-  "historyTurns": 16,
-  "memoryTokenBudget": 1000
+  "maxCompletionTokens": 3000,
+  "inputTokenBudget": 32000,
+  "historyTurns": 32,
+  "memoryTokenBudget": 3000
 }

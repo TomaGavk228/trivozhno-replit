@@ -1,6 +1,6 @@
 namespace Trivozhno.Infrastructure.Persistence;
 
-public enum UserState { MainMenu, ChatActive, ConfessionDraft, ConfessionConfirm, ConfessionSending, MoodSelect, MoodNote, MoodHistory, Settings, ReminderFrequency, ReminderTime, ConfirmClearMemory, ConfirmDeleteData, ConfirmDiscard, ConfirmMoodContext }
+public enum UserState { MainMenu, ChatActive, ConfessionDraft, ConfessionConfirm, ConfessionSending, MoodSelect, MoodNote, MoodHistory, Settings, ReminderFrequency, ReminderTime, ConfirmClearMemory, ConfirmDeleteData, ConfirmDiscard }
 
 public sealed class BotUser
 {
@@ -15,13 +15,10 @@ public sealed class BotUser
     public Guid? SessionId { get; set; }
     public bool AiNoticeShown { get; set; }
     public bool ReminderPromptShown { get; set; }
-    public bool MoodContextEnabled { get; set; }
-    public bool MoodConsentShown { get; set; }
     public string ChatStyleProfile { get; set; } = "";
     public bool Blocked { get; set; }
     public int PendingFrequency { get; set; } = 1;
     public bool CustomTime { get; set; }
-    public DateTimeOffset SummaryNextAt { get; set; }
     public DateTime HistoryEndLocal { get; set; }
     public DateTimeOffset? HistoryCursorTime { get; set; }
     public long? HistoryCursorId { get; set; }
@@ -51,7 +48,6 @@ public sealed class ChatMessage : OwnedEntity
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? LeaseUntil { get; set; }
     public int Attempts { get; set; }
-    public bool QueueNoticeShown { get; set; }
     public bool MoodDerived { get; set; }
     public string SourcesJson { get; set; } = "[]";
     // A Telegram message stays intact in Text; TurnText is the complete user turn.
@@ -142,6 +138,7 @@ public sealed class OutboxMessage
     public int Attempts { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset AvailableAt { get; set; }
+    public DateTimeOffset? LeaseUntil { get; set; }
     public string? ErrorCode { get; set; }
 }
 public sealed class PollCheckpoint { public int Id { get; set; } = 1; public long Offset { get; set; } }

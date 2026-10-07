@@ -6,7 +6,7 @@ using System.Text.Json;
 using Trivozhno.Features.Conversation;
 using Trivozhno.Features.Memory;
 using Trivozhno.Host;
-using Trivozhno.Infrastructure.Groq;
+using Trivozhno.Infrastructure.Ai;
 using Trivozhno.Infrastructure.Persistence;
 
 namespace Trivozhno.Infrastructure.Gemini;
@@ -14,7 +14,7 @@ namespace Trivozhno.Infrastructure.Gemini;
 // Shared by transient HTTP clients. Provider cooldown also applies to later jobs.
 public sealed class GeminiRequestGate(BotOptions options, IClock clock)
 {
-    private readonly SemaphoreSlim slots = new(options.GeminiConcurrency, options.GeminiConcurrency);
+    private readonly SemaphoreSlim slots = new(options.AiConcurrency, options.AiConcurrency);
     private readonly object sync = new();
     private DateTimeOffset blockedUntil;
 
@@ -181,7 +181,7 @@ public sealed class GeminiClient(HttpClient http, BotOptions options, GeminiRequ
                     throw new AiUnavailableException("invalid_response");
                 // Native schema is enforced by Google. No plain-text/repair fallback.
                 var reply = ChatReplyFormat.Parse(answer);
-                return result with { Text = reply.Reply, ConversationState = reply.ConversationState, MemoryUpdates = reply.MemoryUpdates };
+                return result with { Text = reply.Reply, ConversationState = reply.ConversationState, MemoryUpdates = reply.MemoryUpdates, UsedSources = reply.UsedSources! };
             }
         }
         throw new AiUnavailableException();
@@ -243,7 +243,7 @@ public sealed class GeminiClient(HttpClient http, BotOptions options, GeminiRequ
 
     private async Task RecordUsage(AiResult result, CancellationToken ct)
     {
-        // Provider telemetry only. Groq's old daily reservations do not apply.
+        // Record provider-reported tokens; local estimates are not billing data.
         try
         {
             using var scope = scopes.CreateScope();

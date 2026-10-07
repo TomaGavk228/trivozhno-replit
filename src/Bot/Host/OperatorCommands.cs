@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
-using Trivozhno.Infrastructure.Groq;
+using Trivozhno.Infrastructure.Ai;
 using Trivozhno.Infrastructure.Knowledge;
 using Trivozhno.Infrastructure.Persistence;
 
@@ -15,6 +15,16 @@ public static class OperatorCommands
         var db = provider.GetRequiredService<BotDb>(); var options = provider.GetRequiredService<BotOptions>(); var ct = CancellationToken.None;
         switch (args[0])
         {
+            case "check-config":
+                var config = provider.GetRequiredService<Trivozhno.Features.Conversation.ChatConfiguration>().Read();
+                options.ValidateModel(config.Generation.Model);
+                Console.WriteLine(JsonSerializer.Serialize(new { config.Hash, config.ExampleCount, config.Generation,
+                    minimumInputEstimate = TokenEstimate.Count(config.Instruction) +
+                        Trivozhno.Features.Memory.ChatReplyFormat.FormatTokens(config.Generation.Model) + 64 }));
+                return 0;
+            case "reindex-books":
+                Console.WriteLine(JsonSerializer.Serialize(new { reindexed = await provider.GetRequiredService<BookImporter>().Reindex(ct) }));
+                return 0;
             case "channel-id":
             case "delete-webhook":
                 if (options.TelegramToken.Length == 0) throw new InvalidOperationException("Set TELEGRAM_BOT_TOKEN in Secrets.");
@@ -125,7 +135,7 @@ public static class OperatorCommands
                     unknown = await db.Outbox.CountAsync(x => x.Status == "delivery_unknown", ct),
                     errors = await db.Inbox.CountAsync(x => x.Status == "failed", ct) +
                              await db.Outbox.CountAsync(x => x.Status == "failed", ct),
-                    groq24h = new
+                    ai24h = new
                     {
                         total = usage.Sum(x => x.Tokens),
                         prompt = usage.Sum(x => x.PromptTokens),
@@ -138,7 +148,7 @@ public static class OperatorCommands
                 return 0;
             }
             default:
-                Console.Error.WriteLine("Commands: serve, migrate, channel-id, delete-webhook, import-books --path DIR, list-books, audit-books, deactivate-book ID, search-books --query TEXT, inspect-outbox, mark-delivered ID --message-id ID, retry-delivery ID [--accept-duplicate-risk], metrics"); return 2;
+                Console.Error.WriteLine("Commands: serve, migrate, check-config, channel-id, delete-webhook, import-books --path DIR, reindex-books, list-books, audit-books, deactivate-book ID, search-books --query TEXT, inspect-outbox, mark-delivered ID --message-id ID, retry-delivery ID [--accept-duplicate-risk], metrics"); return 2;
         }
     }
     private static string? Option(string[] args, string option)

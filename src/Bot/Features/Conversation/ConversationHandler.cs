@@ -7,7 +7,7 @@ using Trivozhno.Infrastructure.Telegram;
 
 namespace Trivozhno.Features.Conversation;
 
-public sealed class ConversationHandler(BotDb db, Ui ui, IClock clock, BotOptions options)
+public sealed class ConversationHandler(BotDb db, Ui ui, IClock clock, BotOptions options, ActiveGenerations active)
 {
     public void Open(BotUser u)
     {
@@ -35,18 +35,22 @@ public sealed class ConversationHandler(BotDb db, Ui ui, IClock clock, BotOption
         // A generated answer does not count as a conversational turn until it
         // actually reaches Telegram. Include all user messages still unanswered.
         var unserved = recent is not null &&
-            !await db.Messages.AnyAsync(x => x.ReplyToId == recent.Id && x.Role == "assistant" && x.Status == "done", ct);
+            !await db.Messages.AnyAsync(x => x.ReplyToId == recent.Id && x.Role == "assistant" && x.Text != "" &&
+                (x.Status == "done" || x.Status == "partial_delivery" || x.Status == "interrupted"), ct);
         var firstAt = unserved ? recent!.TurnStartedAt ?? recent.CreatedAt : now;
         var turnText = unserved ? (recent!.TurnText ?? recent.Text).TrimEnd() + "\n" + input.Text!.TrimStart() : input.Text!;
         var quietUntil = now.AddMilliseconds(options.ChatQuietMilliseconds);
         var maxUntil = firstAt.AddMilliseconds(options.ChatGatherMilliseconds);
         if (unserved) recent!.Status = "superseded";
         session.Revision++;
+        active.Cancel(u.Id);
         // Cancel only unsent AI messages. A message already sent cannot be recalled.
         await db.Outbox.Where(x => x.UserId == u.Id && x.SessionId == session.Id && x.Kind == "ai" && x.Status == "queued")
             .ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "cancelled")
                 .SetProperty(y => y.Text, "").SetProperty(y => y.Markup, (string?)null)
                 .SetProperty(y => y.Destination, (long?)null), ct);
+        await db.Messages.Where(x => x.UserId == u.Id && x.SessionId == session.Id && x.Role == "assistant" && x.Status == "partial_delivery")
+            .ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "interrupted"), ct);
         if (unserved)
             await db.Messages.Where(x => x.ReplyToId == recent!.Id && x.Role == "assistant" && x.Status == "pending_delivery")
                 .ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "superseded"), ct);

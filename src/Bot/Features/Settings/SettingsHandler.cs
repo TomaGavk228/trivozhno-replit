@@ -5,7 +5,7 @@ using Trivozhno.Infrastructure.Persistence;
 
 namespace Trivozhno.Features.Settings;
 
-public sealed class SettingsHandler(BotDb db, Ui ui, BotOptions options, Trivozhno.Resources.Uk uk)
+public sealed class SettingsHandler(BotDb db, Ui ui, BotOptions options, Trivozhno.Resources.Uk uk, ActiveGenerations active)
 {
     public void Show(BotUser u)
     {
@@ -34,6 +34,7 @@ public sealed class SettingsHandler(BotDb db, Ui ui, BotOptions options, Trivozh
     public async Task Delete(BotUser u, CancellationToken ct)
     {
         // No channel deletion/edit API exists anywhere in this application.
+        active.Cancel(u.Id);
         var destination = u.TelegramId;
         await db.Inbox.Where(x => x.TelegramId == destination).ExecuteDeleteAsync(ct);
         db.Users.Remove(u); await db.SaveChangesAsync(ct);

@@ -55,8 +55,8 @@ public sealed class BotDb(DbContextOptions<BotDb> options) : DbContext(options)
         m.Entity<KnowledgeChunk>().HasIndex(x => new { x.SourceId, x.Ordinal }).IsUnique();
         m.Entity<KnowledgeChunk>().HasIndex(x => x.Terms).HasMethod("gin");
         m.Entity<PollCheckpoint>().Property(x => x.Id).ValueGeneratedNever();
-        m.Entity<Trivozhno.Infrastructure.Groq.ApiUsage>().HasIndex(x => x.At);
-        m.Entity<Trivozhno.Infrastructure.Groq.ApiUsage>().HasIndex(x => new { x.Model, x.At });
+        m.Entity<Trivozhno.Infrastructure.Ai.ApiUsage>().HasIndex(x => x.At);
+        m.Entity<Trivozhno.Infrastructure.Ai.ApiUsage>().HasIndex(x => new { x.Model, x.At });
     }
     private static void Owned<T>(ModelBuilder m) where T : OwnedEntity =>
         m.Entity<T>().HasOne<BotUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);

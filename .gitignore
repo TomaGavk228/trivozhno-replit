@@ -2,6 +2,7 @@
 **/obj/
 **/TestResults/
 .dotnet/
+.tools/
 .env
 .env.*
 !.env.example

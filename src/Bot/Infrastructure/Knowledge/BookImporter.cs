@@ -13,6 +13,22 @@ public sealed record TextPage(int Number, string Text);
 
 public sealed class BookImporter(BotDb db, IClock clock, BotOptions options)
 {
+    // Deterministic index refresh for previously imported PDFs. No AI calls,
+    // original pages and book text are unchanged; batches bound memory usage.
+    public async Task<int> Reindex(CancellationToken ct)
+    {
+        var updated = 0;
+        long after = 0;
+        while (true)
+        {
+            var chunks = await db.Chunks.Where(x => x.Id > after).OrderBy(x => x.Id).Take(250).ToListAsync(ct);
+            if (chunks.Count == 0) break;
+            foreach (var chunk in chunks) chunk.Terms = Lexicon.Terms(chunk.Text);
+            await db.SaveChangesAsync(ct); after = chunks[^1].Id; updated += chunks.Count;
+            db.ChangeTracker.Clear();
+        }
+        return updated;
+    }
     public async Task<ImportReport> Import(string file, CancellationToken ct)
     {
         await using var stream = File.OpenRead(file);

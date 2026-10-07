@@ -15,7 +15,7 @@ public sealed record ChatGenerationSettings
     public required int MaxCompletionTokens { get; init; }
     public required int InputTokenBudget { get; init; }
     public required int HistoryTurns { get; init; }
-    public int MemoryTokenBudget { get; init; } = 1000;
+    public int MemoryTokenBudget { get; init; } = 3000;
 }
 
 public sealed record ChatConfigurationSnapshot(string Instruction, ChatGenerationSettings Generation, string Hash, int ExampleCount);
@@ -72,18 +72,13 @@ public sealed class ChatConfiguration
                 var examples = examplesText.Replace("\r\n", "\n").Replace('\r', '\n')
                     .Split("\n---\n", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
                 if (prompt.Length is < 40 or > 20_000 || settings is null ||
-                    string.IsNullOrWhiteSpace(settings.Model) || settings.Model.Length > 100 ||
-                    settings.ReasoningEffort is not (null or "minimal" or "low" or "medium" or "high" or "none" or "default") ||
-                    (settings.ReasoningEffort == "minimal" && !settings.Model.StartsWith("gemini-", StringComparison.Ordinal)) ||
-                    (settings.Model.StartsWith("openai/gpt-oss-", StringComparison.Ordinal) &&
-                        settings.ReasoningEffort is not ("low" or "medium" or "high")) ||
+                    settings.Model != "gemini-3.5-flash-lite" ||
+                    settings.ReasoningEffort is not ("minimal" or "low" or "medium" or "high") ||
                     !double.IsFinite(settings.Temperature) || settings.Temperature is < 0 or > 2 ||
                     !double.IsFinite(settings.TopP) || settings.TopP is <= 0 or > 1 ||
                     settings.MaxCompletionTokens is < 256 or > 4000 ||
-                    settings.InputTokenBudget is < 1000 or > 32_000 || settings.HistoryTurns is < 1 or > 40 ||
-                    settings.MemoryTokenBudget is < 0 or > 2000 ||
-                    (settings.Model.StartsWith("glm-", StringComparison.Ordinal) &&
-                        (settings.Temperature > 1 || settings.TopP < .01)) ||
+                    settings.InputTokenBudget is < 1000 or > 64_000 || settings.HistoryTurns is < 1 or > 40 ||
+                    settings.MemoryTokenBudget is < 500 or > 6000 ||
                     examples.Length > 40 || examples.Any(e => !ValidExample(e)))
                     throw new InvalidDataException();
                 var instruction = prompt;

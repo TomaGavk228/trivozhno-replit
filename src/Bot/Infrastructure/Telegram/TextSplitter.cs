@@ -5,13 +5,13 @@ namespace Trivozhno.Infrastructure.Telegram;
 
 public static class TextSplitter
 {
-    // Two self-contained short paragraphs can be two bubbles. Anything else is
-    // one message, except the existing Telegram length safety split.
+    // Each short prose line is one Telegram bubble. Preserve code, lists and
+    // long explanations as a block; Telegram length splitting stays lossless.
     public static IReadOnlyList<string> SplitChat(string text)
     {
         var trimmed = text.Trim();
         if (trimmed.Length == 0) return [];
-        var paragraphs = Regex.Split(trimmed, @"\r?\n[ \t]*\r?\n+", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100))
+        var paragraphs = Regex.Split(trimmed, @"\r?\n+", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100))
             .Select(p => p.Trim()).Where(p => p.Length > 0).ToArray();
         if (IsChatBurst(paragraphs, trimmed.Length))
             return paragraphs;
@@ -20,15 +20,15 @@ public static class TextSplitter
     public static bool IsChatBurst(string text)
     {
         var trimmed = text.Trim();
-        var paragraphs = Regex.Split(trimmed, @"\r?\n[ \t]*\r?\n+", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100))
+        var paragraphs = Regex.Split(trimmed, @"\r?\n+", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100))
             .Select(p => p.Trim()).Where(p => p.Length > 0).ToArray();
         return IsChatBurst(paragraphs, trimmed.Length);
     }
     private static bool IsChatBurst(string[] paragraphs, int length) =>
-        paragraphs.Length == 2 && paragraphs.All(p => p.Length is > 0 and <= 240) && length <= 400 &&
+        paragraphs.Length is >= 2 and <= 6 && paragraphs.All(p => p.Length is > 0 and <= 500) && length <= 2000 &&
         // A short reaction can be its own bubble; a numbered list or an
         // unfinished lead-in is a single message, not two conversational turns.
-        !paragraphs[0].EndsWith(':') &&
+        !paragraphs[0].EndsWith(':') && !paragraphs.Any(p => p.Contains("```")) &&
         !paragraphs.Any(p => Regex.IsMatch(p, @"^(?:[-*•]|\d+[.)])\s",
             RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)));
     // Lossless: whitespace belongs to one of the parts; surrogate pairs are never split.

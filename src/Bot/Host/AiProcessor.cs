@@ -4,13 +4,13 @@ using Microsoft.EntityFrameworkCore;
 using Trivozhno.Features.Conversation;
 using Trivozhno.Features.Memory;
 using Trivozhno.Features.Navigation;
-using Trivozhno.Infrastructure.Groq;
+using Trivozhno.Infrastructure.Ai;
 using Trivozhno.Infrastructure.Persistence;
 using Trivozhno.Infrastructure.Telegram;
 
 namespace Trivozhno.Host;
 
-public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IClock clock, BotOptions options, ILogger<AiProcessor> log)
+public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IClock clock, BotOptions options, ActiveGenerations active, ILogger<AiProcessor> log)
 {
     private readonly SemaphoreSlim claimGate = new(1, 1);
 
@@ -18,8 +18,8 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
     {
         ChatMessage? job = null;
         BotUser? user = null;
-        ChatContext? context = null;
         var leaseAttempt = 0;
+        using var generationHolder = new GenerationHolder();
 
         await claimGate.WaitAsync(ct);
         try
@@ -58,29 +58,22 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
                 current.Attempts++;
                 leaseAttempt = current.Attempts;
                 current.LeaseUntil = clock.UtcNow.AddSeconds(options.JobBudget + 30);
-                try
-                {
-                    context = await scope.ServiceProvider.GetRequiredService<ChatHistory>().Build(currentUser, current, ct);
-                }
-                catch (ContextTooLargeException)
-                {
-                    current.Status = "unanswered";
-                    scope.ServiceProvider.GetRequiredService<Ui>().Say(currentUser, "chat.large");
-                }
+                // The detached snapshots are read outside locks/transactions.
+                user = currentUser;
+                job = current;
             }
 
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
+            if (leaseAttempt > 0) generationHolder.Value = active.Begin(user.Id, ct);
         }
         finally
         {
             claimGate.Release();
         }
 
-        if (context is null || user is null || job is null) return true;
+        if (generationHolder.Value is null || user is null || job is null) return true;
 
-        log.LogInformation("AI job {Operation}; queue wait {QueueMs} ms; input estimate {InputTokens}",
-            job.Id, (clock.UtcNow - job.CreatedAt).TotalMilliseconds, TokenEstimate.Count(context.Messages));
         var watch = Stopwatch.StartNew();
         AiResult? result = null;
         var error = "chat.error";
@@ -89,10 +82,14 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
         {
             try
             {
+                var context = await scope.ServiceProvider.GetRequiredService<ChatHistory>()
+                    .Build(user, job, generationHolder.Value.Token);
+                log.LogInformation("AI job {Operation}; queue wait {QueueMs} ms; input estimate {InputTokens}",
+                    job.Id, (clock.UtcNow - job.CreatedAt).TotalMilliseconds, TokenEstimate.Count(context.Messages));
                 // A typing indicator is cosmetic; its failure must not lose the reply.
                 try
                 {
-                    using var typing = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    using var typing = CancellationTokenSource.CreateLinkedTokenSource(generationHolder.Value.Token);
                     typing.CancelAfter(TimeSpan.FromSeconds(2));
                     await scope.ServiceProvider.GetRequiredService<ITelegramClient>().Typing(user.TelegramId, typing.Token);
                 }
@@ -100,7 +97,11 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
                 {
                     log.LogDebug("Typing indicator unavailable: {Category}", e.GetType().Name);
                 }
-                result = await scope.ServiceProvider.GetRequiredService<ChatResponder>().Reply(context, ct);
+                result = await scope.ServiceProvider.GetRequiredService<ChatResponder>().Reply(context, generationHolder.Value!.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && generationHolder.Value!.Token.IsCancellationRequested)
+            {
+                log.LogInformation("AI job {Operation} cancelled; superseded {Superseded}", job.Id, generationHolder.Value!.Superseded);
             }
             catch (ContextTooLargeException)
             {
@@ -108,6 +109,8 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             }
             catch (Exception e) when (!ct.IsCancellationRequested)
             {
+                if (e is AiUnavailableException quota)
+                    error = quota.Reason switch { "daily_quota" => "chat.quota", "rate_limit" => "chat.rate", _ => "chat.error" };
                 log.LogWarning("AI job {Operation}: {Category}; reason {Reason}", job.Id, e.GetType().Name,
                     e is AiUnavailableException failure ? failure.Reason :
                     e is OperationCanceledException ? "job_budget_exhausted" : "unexpected");
@@ -131,7 +134,9 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             if (result is null)
             {
                 current.Status = "unanswered";
-                ui.Say(u, error);
+                var crisis = CrisisSupport.IfGenerationFailed(current.TurnText ?? current.Text);
+                if (crisis is not null) ui.Text(u, crisis, ui.Reply("chat.end"));
+                else ui.Say(u, error);
             }
             else
             {
@@ -147,7 +152,7 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
                     MemoryVersion = job.MemoryVersion,
                     CreatedAt = clock.UtcNow,
                     MoodDerived = false,
-                    SourcesJson = JsonSerializer.Serialize(new { conversation_state = result.ConversationState, sources = Array.Empty<object>() }, ChatReplyFormat.Json)
+                    SourcesJson = JsonSerializer.Serialize(new { conversation_state = result.ConversationState, sources = result.Sources }, ChatReplyFormat.Json)
                 });
                 await scope.ServiceProvider.GetRequiredService<ChatMemory>().Save(u, current, result.MemoryUpdates, ct);
                 ui.Text(u, result.Text, ui.Reply("chat.end"), "ai", job.SessionId, job.MemoryVersion,
@@ -162,4 +167,10 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
         log.LogInformation("AI job {Operation} finished in {ElapsedMs} ms", job.Id, watch.ElapsedMilliseconds);
         return true;
     }
+    private sealed class GenerationHolder : IDisposable
+    {
+        public ActiveGenerations.Registration? Value { get; set; }
+        public void Dispose() => Value?.Dispose();
+    }
+
 }

@@ -58,7 +58,7 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
         // налаштуваннями та історією з inline-кнопками.
         var mainKeyboardVisible = u.State is UserState.MainMenu
             or UserState.Settings or UserState.MoodSelect or UserState.MoodHistory
-            or UserState.ReminderFrequency or UserState.ConfirmMoodContext
+            or UserState.ReminderFrequency
             or UserState.ConfirmClearMemory or UserState.ConfirmDeleteData
             || u.State == UserState.ReminderTime && !u.CustomTime;
 
@@ -186,7 +186,7 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
             if (action == "rem:custom") { reminders.Custom(u); return; }
             if (action.StartsWith("rem:time:")) { await reminders.Save(u, action[9..], ct); return; }
         }
-        if (action == "settings:cancel" && u.State is UserState.ConfirmClearMemory or UserState.ConfirmDeleteData or UserState.ConfirmMoodContext) { settings.Show(u); return; }
+        if (action == "settings:cancel" && u.State is UserState.ConfirmClearMemory or UserState.ConfirmDeleteData) { settings.Show(u); return; }
         if (u.State == UserState.ConfirmClearMemory && action == "settings:clear:yes") { await settings.Clear(u, ct); return; }
         if (u.State == UserState.ConfirmDeleteData && action == "settings:delete:yes") { await settings.Delete(u, ct); return; }
         ui.Say(u, "stale");

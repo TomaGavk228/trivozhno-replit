@@ -47,5 +47,3 @@ catch (Exception e)
 }
     Environment.ExitCode = 1;
 }
-
-public partial class Program { }

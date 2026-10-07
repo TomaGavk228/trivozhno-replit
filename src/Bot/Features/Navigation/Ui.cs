@@ -7,7 +7,7 @@ using Trivozhno.Resources;
 
 namespace Trivozhno.Features.Navigation;
 
-public sealed class Ui(BotDb db, Uk uk, IClock clock, BotOptions options)
+public sealed class Ui(BotDb db, Uk uk, IClock clock, BotOptions options, ActiveGenerations active)
 {
     public static string RemoveKeyboard => "{\"remove_keyboard\":true}";
     public string Reply(params string[] keys) => JsonSerializer.Serialize(new
@@ -78,6 +78,7 @@ public sealed class Ui(BotDb db, Uk uk, IClock clock, BotOptions options)
     }
     public async Task CloseSession(BotUser u, CancellationToken ct)
     {
+        active.Cancel(u.Id);
         if (u.SessionId is not { } id) return;
         var s = await db.Sessions.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (s is not null) s.EndedAt = clock.UtcNow;

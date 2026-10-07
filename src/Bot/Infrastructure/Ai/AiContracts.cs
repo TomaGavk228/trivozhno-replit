@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace Trivozhno.Infrastructure.Groq;
+namespace Trivozhno.Infrastructure.Ai;
 
 public sealed record AiMessage(string Role, string Content);
 public sealed record AiResult(
@@ -12,6 +12,8 @@ public sealed record AiResult(
     int ReasoningTokens = 0,
     int CachedTokens = 0)
 {
+    public IReadOnlyList<Trivozhno.Infrastructure.Knowledge.BookReference> Sources { get; init; } = [];
+    public IReadOnlyList<long> UsedSources { get; init; } = [];
     public string ConversationState { get; init; } = "";
     public IReadOnlyList<Trivozhno.Features.Memory.MemoryUpdate> MemoryUpdates { get; init; } = [];
 }

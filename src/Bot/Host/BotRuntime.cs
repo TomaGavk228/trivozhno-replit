@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Trivozhno.Features.Confessions;
 using Trivozhno.Features.Reminders;
-using Trivozhno.Infrastructure.Groq;
+using Trivozhno.Infrastructure.Ai;
 using Trivozhno.Infrastructure.Persistence;
 using Trivozhno.Infrastructure.Telegram;
 
@@ -40,12 +40,16 @@ public sealed class Maintenance(IServiceScopeFactory scopes, UserLocks locks, IC
     public async Task Recover(CancellationToken ct)
     {
         using var scope = scopes.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<BotDb>();
-        await db.Outbox.Where(x => x.Status == "sending").ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "delivery_unknown").SetProperty(y => y.ErrorCode, "restart-during-send"), ct);
+        await db.Outbox.Where(x => x.Status == "sending").ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "delivery_unknown")
+            .SetProperty(y => y.LeaseUntil, (DateTimeOffset?)null).SetProperty(y => y.ErrorCode, "restart-during-send"), ct);
         await db.Messages.Where(x => x.Status == "processing").ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "queued").SetProperty(y => y.LeaseUntil, (DateTimeOffset?)null), ct);
     }
     public async Task Tick(CancellationToken ct)
     {
         using var scan = scopes.CreateScope(); var scanDb = scan.ServiceProvider.GetRequiredService<BotDb>();
+        await scanDb.Outbox.Where(x => x.Status == "sending" && (x.LeaseUntil == null || x.LeaseUntil < clock.UtcNow))
+            .ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "delivery_unknown").SetProperty(y => y.LeaseUntil, (DateTimeOffset?)null)
+                .SetProperty(y => y.ErrorCode, "send-lease-expired"), ct);
         var userIds = await scanDb.Users.AsNoTracking().Where(u =>
                 scanDb.Submissions.Any(s => s.UserId == u.Id && s.Status == "sending") ||
                 options.Reminders && options.Conversation && scanDb.Reminders.Any(r => r.UserId == u.Id && r.Enabled && r.NextDueAt <= clock.UtcNow))
@@ -65,6 +69,10 @@ public sealed class Maintenance(IServiceScopeFactory scopes, UserLocks locks, IC
             .ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "cancelled").SetProperty(y => y.Text, "").SetProperty(y => y.Markup, (string?)null).SetProperty(y => y.Destination, (long?)null), ct);
         await scanDb.Outbox.Where(x => x.Kind != "confession" && x.Status == "delivery_unknown")
             .ExecuteUpdateAsync(x => x.SetProperty(y => y.Text, "").SetProperty(y => y.Markup, (string?)null).SetProperty(y => y.Destination, (long?)null), ct);
+        await scanDb.Messages.Where(x => x.Role == "assistant" && (x.Status == "partial_delivery" || x.Status == "pending_delivery") &&
+                scanDb.Outbox.Any(o => o.Kind == "ai" && o.ReplyToId == x.ReplyToId &&
+                    (o.Status == "cancelled" || o.Status == "failed" || o.Status == "delivery_unknown")))
+            .ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "interrupted"), ct);
         // Unowned delivery receipts expire after an hour, including their routing ID.
         await scanDb.Outbox.Where(x => x.UserId == null && x.CreatedAt < clock.UtcNow.AddHours(-1)).ExecuteDeleteAsync(ct);
         await scanDb.Inbox.Where(x => x.Status != "queued" && x.CreatedAt < clock.UtcNow.AddDays(-7)).ExecuteDeleteAsync(ct);
@@ -101,11 +109,12 @@ public sealed class BotRuntime(IServiceScopeFactory scopes, InboxProcessor inbox
                     if (!await inbox.Store(batch, ct)) await Task.Delay(2000, ct);
                     return true;
                 }, 100, stoppingToken),
-                Loop("inbox", inbox.Step, 80, stoppingToken), Loop("outbox", outbox.Step, 50, stoppingToken),
+                Loop("inbox", inbox.Step, 80, stoppingToken),
                 Loop("maintenance", async ct => { await maintenance.Tick(ct); return false; }, 3000, stoppingToken),
                 Heartbeat(lease, stoppingToken)
             };
             for (var i = 0; i < options.AiConcurrency; i++) tasks.Add(Loop("ai", ai.Step, 150, stoppingToken));
+            for (var i = 0; i < 2; i++) tasks.Add(Loop("outbox", outbox.Step, 50, stoppingToken));
             await Task.WhenAll(tasks);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
@@ -117,6 +126,7 @@ public sealed class BotRuntime(IServiceScopeFactory scopes, InboxProcessor inbox
         while (!ct.IsCancellationRequested)
         {
             try { await lease.Heartbeat(ct); status.Heartbeat = clock.UtcNow; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
             catch { status.Running = false; Environment.ExitCode = 1; lifetime.StopApplication(); return; }
             await Task.Delay(10000, ct);
         }

@@ -10,8 +10,7 @@ public static class ChatStyleProfile
         ["questions"] = ["fewer_questions", "more_questions"],
         ["humor"] = ["likes_humor", "less_humor"],
         ["tone"] = ["casual", "neutral_tone"],
-        ["punctuation"] = ["light_punctuation", "normal_punctuation"],
-        ["advice"] = ["minimal_advice", "direct_advice", "ask_before_advice"]
+        ["advice"] = ["direct_advice", "ask_before_advice"]
     };
 
     private static readonly HashSet<string> Allowed =
@@ -87,9 +86,6 @@ public static class ChatStyleProfile
         Add("less_humor", "з гумором обережніше");
         Add("casual", "невимушений розмовний тон");
         Add("neutral_tone", "краще нейтральний тон");
-        Add("light_punctuation", "легша пунктуація, без зайвої офіційності");
-        Add("normal_punctuation", "звичайна пунктуація ок");
-        Add("minimal_advice", "поради коротко і лише по суті");
         Add("direct_advice", "можна давати прямі конкретні поради");
         Add("ask_before_advice", "краще не лізти з порадами без запиту");
         return string.Join("; ", parts);
@@ -105,5 +101,4 @@ public static class ChatStyleProfile
             .Where(Allowed.Contains)
             .ToHashSet(StringComparer.Ordinal);
 
-    public static IReadOnlyList<string> AllowedValues => Allowed.Order(StringComparer.Ordinal).ToArray();
 }
