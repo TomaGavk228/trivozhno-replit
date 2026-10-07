@@ -4,7 +4,7 @@
   "temperature": 1.0,
   "topP": 0.95,
   "maxCompletionTokens": 1600,
-  "inputTokenBudget": 6000,
+  "inputTokenBudget": 16000,
   "historyTurns": 16,
   "memoryTokenBudget": 1000
 }

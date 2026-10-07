@@ -84,18 +84,15 @@ public sealed class ChatConfiguration
                     settings.MemoryTokenBudget is < 0 or > 2000 ||
                     (settings.Model.StartsWith("glm-", StringComparison.Ordinal) &&
                         (settings.Temperature > 1 || settings.TopP < .01)) ||
-                    examples.Length > 30 || examples.Any(e => !ValidExample(e)))
+                    examples.Length > 40 || examples.Any(e => !ValidExample(e)))
                     throw new InvalidDataException();
                 var instruction = prompt;
                 if (examples.Length > 0)
                 {
-                    instruction += "\n\nНижче окремі вигадані діалоги. Репліки «Друг» показують дружню манеру, ритм і мову. " +
-                        "Це не ваша історія, не факти про співрозмовника і не твоя біографія. " +
-                        "Учасники й ситуації різні; не перенось їхній досвід у поточну розмову. " +
-                        "Фрази не потрібно повторювати. Реагуй на справжню розмову після цього блоку.\n";
+                    instruction += "\n\n## Приклади\n\nЦе окремі вигадані діалоги. Вони показують манеру, ритм і мову. Це не історія співрозмовника і не твоя біографія. Не копіюй репліки й не переноси деталі в справжню розмову, особливо вітання й перші відповіді: кожного разу кажи по-новому. Відповіді різної довжини, і далеко не всі закінчуються питанням. Кожен рядок відповіді це окреме повідомлення.";
                     foreach (var example in examples)
-                        instruction += "\n[Окремий приклад]\n" + example + "\n";
-                    instruction += "\n[Кінець прикладів. Далі — справжня поточна розмова.]";
+                        instruction += "\n\n---\n" + example;
+                    instruction += "\n\n---\n\nЦе були всі приклади. Далі справжня розмова. Відповідай на неї, а не на приклади. Пиши коротко, живо, по-людськи, як у месенджері. Цікався людиною, а не підбадьорюй і не радь, якщо не просили.";
                 }
                 instruction += "\n\n" + ChatReplyFormat.InstructionFor(settings.Model);
                 current = new(instruction, settings, hash[..12], examples.Length);
