@@ -61,7 +61,8 @@ public sealed class ChatConfiguration
                     return File.ReadAllText(path);
                 }
                 var prompt = ReadFile("prompt.txt").Trim();
-                var examplesText = ReadFile("examples.txt");
+                // Dialogue examples are temporarily disabled, including any stale deployed copies.
+                var examplesText = string.Empty;
                 var generationText = ReadFile("generation.json");
                 var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
                     JsonSerializer.Serialize(new[] { prompt, examplesText, generationText }))));
@@ -98,7 +99,7 @@ public sealed class ChatConfiguration
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
             {
                 if (current is null) throw new InvalidOperationException(
-                    $"Invalid chat configuration in {DirectoryPath}. Check prompt.txt, examples.txt and generation.json.");
+                    $"Invalid chat configuration in {DirectoryPath}. Check prompt.txt and generation.json.");
                 if (!readFailureReported)
                     log.LogWarning("Chat configuration edit rejected; directory {Directory}; category {Category}; keeping SHA {Hash}",
                         DirectoryPath, e.GetType().Name, current.Hash);
