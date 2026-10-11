@@ -83,8 +83,8 @@ public sealed class GeminiClient(HttpClient http, BotOptions options, GeminiRequ
             contents,
             generationConfig = new
             {
-                temperature = settings.Temperature, topP = settings.TopP,
-                maxOutputTokens = settings.MaxCompletionTokens, candidateCount = 1,
+                // Sampling parameters and candidateCount are unsupported/deprecated for this model.
+                maxOutputTokens = settings.MaxCompletionTokens,
                 thinkingConfig = new { thinkingLevel = thinking, includeThoughts = false },
                 responseFormat = ChatReplyFormat.GeminiResponseFormat()
             },

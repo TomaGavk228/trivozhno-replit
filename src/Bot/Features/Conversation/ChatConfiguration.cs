@@ -10,8 +10,11 @@ public sealed record ChatGenerationSettings
 {
     public required string Model { get; init; }
     public required string? ReasoningEffort { get; init; }
-    public required double Temperature { get; init; }
-    public required double TopP { get; init; }
+    // Accepted only for older CHAT_CONTENT_PATH files; this model ignores sampling controls.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? Temperature { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? TopP { get; init; }
     public required int MaxCompletionTokens { get; init; }
     public required int InputTokenBudget { get; init; }
     public required int HistoryTurns { get; init; }
@@ -75,8 +78,6 @@ public sealed class ChatConfiguration
                 if (prompt.Length is < 40 or > 20_000 || settings is null ||
                     settings.Model != "gemini-3.5-flash-lite" ||
                     settings.ReasoningEffort is not ("minimal" or "low" or "medium" or "high") ||
-                    !double.IsFinite(settings.Temperature) || settings.Temperature is < 0 or > 2 ||
-                    !double.IsFinite(settings.TopP) || settings.TopP is <= 0 or > 1 ||
                     settings.MaxCompletionTokens is < 256 or > 4000 ||
                     settings.InputTokenBudget is < 1000 or > 64_000 || settings.HistoryTurns is < 1 or > 40 ||
                     settings.MemoryTokenBudget is < 500 or > 6000 ||
@@ -92,6 +93,8 @@ public sealed class ChatConfiguration
                 }
                 instruction += "\n\n" + ChatReplyFormat.InstructionFor(settings.Model);
                 current = new(instruction, settings, hash[..12], examples.Length);
+                if (settings.Temperature is not null || settings.TopP is not null)
+                    log.LogWarning("Legacy temperature/topP settings are ignored for gemini-3.5-flash-lite; remove them from generation.json");
                 log.LogInformation("Chat configuration loaded; directory {Directory}; SHA {Hash}; examples {Examples}; model {Model}",
                     DirectoryPath, current.Hash, examples.Length, settings.Model);
                 return current;
