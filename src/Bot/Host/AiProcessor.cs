@@ -101,7 +101,13 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested && generationHolder.Value!.Token.IsCancellationRequested)
             {
-                log.LogInformation("AI job {Operation} cancelled; superseded {Superseded}", job.Id, generationHolder.Value!.Superseded);
+                if (generationHolder.Value!.Superseded)
+                    log.LogInformation("AI job {Operation} cancelled; superseded true", job.Id);
+                else
+                {
+                    error = "chat.timeout";
+                    log.LogWarning("AI job {Operation}: cancelled; reason job_budget_exhausted; budget {BudgetSeconds} s", job.Id, options.JobBudget);
+                }
             }
             catch (ContextTooLargeException)
             {
@@ -110,10 +116,14 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             catch (Exception e) when (!ct.IsCancellationRequested)
             {
                 if (e is AiUnavailableException quota)
-                    error = quota.Reason switch { "daily_quota" => "chat.quota", "rate_limit" => "chat.rate", _ => "chat.error" };
+                    error = quota.Reason switch
+                    {
+                        "daily_quota" => "chat.quota", "rate_limit" => "chat.rate",
+                        "request_timeout" or "job_budget_exhausted" => "chat.timeout", _ => "chat.error"
+                    };
                 log.LogWarning("AI job {Operation}: {Category}; reason {Reason}", job.Id, e.GetType().Name,
                     e is AiUnavailableException failure ? failure.Reason :
-                    e is OperationCanceledException ? "job_budget_exhausted" : "unexpected");
+                    e is OperationCanceledException ? "unexpected_cancellation" : "unexpected");
             }
         }
 

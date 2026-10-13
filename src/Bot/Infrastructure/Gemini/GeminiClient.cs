@@ -77,7 +77,7 @@ public sealed class GeminiClient(HttpClient http, BotOptions options, GeminiRequ
             if (contents.Count > 0 && contents[^1].Role == role) contents[^1].Parts.Add(new(message.Content));
             else contents.Add(new(role, [new(message.Content)]));
         }
-        var payload = new
+        object CreatePayload(string thinkingLevel) => new
         {
             systemInstruction = new { parts = messages.Where(m => m.Role == "system").Select(m => new { text = m.Content }).ToArray() },
             contents,
@@ -85,7 +85,7 @@ public sealed class GeminiClient(HttpClient http, BotOptions options, GeminiRequ
             {
                 // Sampling parameters and candidateCount are unsupported/deprecated for this model.
                 maxOutputTokens = settings.MaxCompletionTokens,
-                thinkingConfig = new { thinkingLevel = thinking, includeThoughts = false },
+                thinkingConfig = new { thinkingLevel, includeThoughts = false },
                 responseFormat = ChatReplyFormat.GeminiResponseFormat()
             },
             store = false
@@ -101,11 +101,35 @@ public sealed class GeminiClient(HttpClient http, BotOptions options, GeminiRequ
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
             // Never put the key in the URL, payload or logs.
             request.Headers.Add("x-goog-api-key", options.GeminiKey);
-            request.Content = JsonContent.Create(payload);
-            log.LogInformation("Gemini text request; model {Model}; thinking {Thinking}; format JSON schema; input estimate {Input}; output ceiling {Output}; attempt {Attempt}",
-                settings.Model, thinking, estimate, settings.MaxCompletionTokens, attempt + 1);
+            request.Content = JsonContent.Create(CreatePayload(thinking));
+            log.LogInformation("Gemini text request; model {Model}; thinking {Thinking}; format JSON schema; input estimate {Input}; output ceiling {Output}; attempt {Attempt}; HTTP timeout {TimeoutSeconds} s; job budget {BudgetSeconds} s",
+                settings.Model, thinking, estimate, settings.MaxCompletionTokens, attempt + 1, options.AiTimeout, options.JobBudget);
             watch.Restart();
-            using var response = await http.SendAsync(request, timeout.Token);
+            HttpResponseMessage received;
+            try
+            {
+                received = await http.SendAsync(request, timeout.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && token.IsCancellationRequested)
+            {
+                throw new AiUnavailableException("job_budget_exhausted");
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested && timeout.IsCancellationRequested)
+            {
+                log.LogWarning("Gemini HTTP timeout; model {Model}; thinking {Thinking}; attempt {Attempt}; HTTP {HttpMs} ms; timeout {TimeoutSeconds} s",
+                    settings.Model, thinking, attempt + 1, watch.ElapsedMilliseconds, options.AiTimeout);
+                // Retry once with less thinking, within the same job budget and
+                // three-attempt ceiling. A newer user message cancels both tries.
+                if (attempt < 2 && thinking is "MEDIUM" or "HIGH")
+                {
+                    token.ThrowIfCancellationRequested();
+                    log.LogWarning("Gemini timeout fallback; thinking {PreviousThinking} -> LOW; next attempt {Attempt}", thinking, attempt + 2);
+                    thinking = "LOW";
+                    continue;
+                }
+                throw new AiUnavailableException("request_timeout");
+            }
+            using var response = received;
             log.LogInformation("Gemini timing; model {Model}; slot wait {SlotMs} ms; cooldown wait {CooldownMs} ms; HTTP {HttpMs} ms; status {Status}",
                 settings.Model, slotMs, cooldownMs, watch.ElapsedMilliseconds, (int)response.StatusCode);
 
