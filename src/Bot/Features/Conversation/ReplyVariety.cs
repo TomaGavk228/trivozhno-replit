@@ -3,7 +3,8 @@ using System.Text.RegularExpressions;
 namespace Trivozhno.Features.Conversation;
 
 // A cheap local hint against the model settling into one template: repeated
-// openers and reaction words, question after question, "X чи Y?" choices.
+// openers and reaction words, "X чи Y?" choices. Questions themselves are not
+// limited: after a greeting, "шо сталося?" is often the right next reply.
 // It only describes the bot's own recent replies; no extra model request.
 public static class ReplyVariety
 {
@@ -34,13 +35,6 @@ public static class ReplyVariety
             .GroupBy(w => w).Where(g => g.Count() >= 2).Select(g => g.Key).Except(openers).Take(8).ToArray();
         if (repeated.Length > 0)
             notes.Add("слова " + Quote(repeated) + " вже повторювалися, обійдися без них");
-
-        var sad = last.Count(r => r.Contains('(') && !r.Contains(":("));
-        if (sad >= 2) notes.Add("смайлик «(» був у кількох відповідях поспіль, цього разу без нього");
-
-        var questionStreak = replies.Reverse().TakeWhile(r => r.Contains('?')).Count();
-        if (questionStreak >= 2)
-            notes.Add("кілька останніх відповідей поспіль мали питання, цього разу скажи думку чи реакцію без питання, якщо людина сама нічого не питає");
 
         var choices = last.Count(r => Regex.IsMatch(r, @"\bчи\b[^?\n]*\?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)));
         if (choices >= 2) notes.Add("не став питань з вибором «X чи Y?»");
