@@ -19,7 +19,7 @@ public static class OperatorCommands
                 var config = provider.GetRequiredService<Trivozhno.Features.Conversation.ChatConfiguration>().Read();
                 options.ValidateModel(config.Generation.Model);
                 Console.WriteLine(JsonSerializer.Serialize(new { config.Hash, config.ExampleCount, config.Generation,
-                    minimumInputEstimate = TokenEstimate.Count(config.Instruction) +
+                    minimumInputEstimate = TokenEstimate.Count(config.Instruction(0)) +
                         Trivozhno.Features.Memory.ChatReplyFormat.FormatTokens(config.Generation.Model) + 64 }));
                 return 0;
             case "reindex-books":

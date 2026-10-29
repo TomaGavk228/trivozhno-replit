@@ -20,7 +20,7 @@ public sealed class ChatHistory(BotDb db, ChatConfiguration configuration, BotOp
         var settings = snapshot.Generation;
         options.ValidateModel(settings.Model);
         var limit = settings.InputTokenBudget - ChatReplyFormat.FormatTokens(settings.Model);
-        var instruction = new AiMessage("system", snapshot.Instruction);
+        var instruction = new AiMessage("system", snapshot.Instruction(current.Id));
         var latest = new AiMessage("user", current.TurnText ?? current.Text);
         var mandatory = TokenEstimate.Count(new[] { instruction, latest });
         if (mandatory > limit) throw new ContextTooLargeException();
@@ -56,12 +56,14 @@ public sealed class ChatHistory(BotDb db, ChatConfiguration configuration, BotOp
         var messages = new List<AiMessage> { instruction };
         if (material.Text.Length > 0) messages.Add(new("system", material.Text));
         if (remembered.Text.Length > 0) messages.Add(new("system", remembered.Text));
+        var variety = ReplyVariety.Hint(included.Where(x => x.Role == "assistant").OrderBy(x => x.ReplyToId).Select(x => x.Text).ToArray());
+        if (variety.Length > 0) messages.Add(new("system", variety));
         messages.AddRange(history); messages.Add(latest);
         // Optional context never displaces the exact current message.
         while (TokenEstimate.Count(messages) > limit && messages.Count > 2) messages.RemoveAt(1);
         if (!messages.Any(x => x.Role == "system" && x.Content == material.Text)) material = material with { References = [] };
-        log.LogInformation("Chat context; turn {Turn}; SHA {Hash}; history messages {History}; examples {Examples}; memory facts {Facts}; memory episodes {Episodes}; state {State}; books {Books}; book status {BookStatus}; estimated tokens {Tokens}; current preserved true",
-            current.Id, snapshot.Hash, history.Count, snapshot.ExampleCount, remembered.Facts, remembered.Episodes, remembered.HasState,
+        log.LogInformation("Chat context; turn {Turn}; SHA {Hash}; history messages {History}; examples {Examples}; memory facts {Facts}; memory episodes {Episodes}; state {State}; variety hint {Variety}; books {Books}; book status {BookStatus}; estimated tokens {Tokens}; current preserved true",
+            current.Id, snapshot.Hash, history.Count, snapshot.ExampleCount, remembered.Facts, remembered.Episodes, remembered.HasState, variety.Length > 0,
             material.References.Count, material.Status, TokenEstimate.Count(messages) + ChatReplyFormat.FormatTokens(settings.Model));
         var references = material.References.Concat(messages.Any(x => x.Role == "system" && x.Content == remembered.Text)
                 ? remembered.Sources ?? [] : [])

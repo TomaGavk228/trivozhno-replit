@@ -21,7 +21,30 @@ public sealed record ChatGenerationSettings
     public int MemoryTokenBudget { get; init; } = 3000;
 }
 
-public sealed record ChatConfigurationSnapshot(string Instruction, ChatGenerationSettings Generation, string Hash, int ExampleCount);
+public sealed record ChatConfigurationSnapshot(string Prompt, IReadOnlyList<string> Examples, string Format,
+    ChatGenerationSettings Generation, string Hash)
+{
+    public const int ExamplesPerTurn = 4;
+    public int ExampleCount => Examples.Count;
+
+    // Each turn sees a different small subset, so the model learns the tone
+    // instead of replaying the same few scripted lines. The seed keeps one
+    // turn's retries on the same subset.
+    public string Instruction(long seed)
+    {
+        var instruction = Prompt;
+        if (Examples.Count > 0)
+        {
+            var random = new Random(unchecked((int)seed ^ (int)(seed >> 32)));
+            var chosen = Examples.OrderBy(_ => random.Next()).Take(ExamplesPerTurn);
+            instruction += "\n\nПРИКЛАДИ\n\nКілька окремих вигаданих діалогів, щоб показати тон і різну форму відповідей. Це не сценарії: не повторюй їхніх слів, фактів і ситуацій, відповідай по-своєму на справжню розмову.";
+            foreach (var example in chosen)
+                instruction += "\n\n" + example;
+            instruction += "\n\nДалі справжня розмова. Відповідай на конкретні слова людини, як відповів би її друг.";
+        }
+        return instruction + "\n\n" + Format;
+    }
+}
 
 // All files form one validated snapshot. Bad live edits retain the last valid
 // snapshot; bad startup files fail explicitly instead of using a hidden prompt.
@@ -64,8 +87,8 @@ public sealed class ChatConfiguration
                     return File.ReadAllText(path);
                 }
                 var prompt = ReadFile("prompt.txt").Trim();
-                // Dialogue examples are temporarily disabled, including any stale deployed copies.
-                var examplesText = string.Empty;
+                // Optional bank; a missing file means no examples.
+                var examplesText = File.Exists(Path.Combine(DirectoryPath, "examples.txt")) ? ReadFile("examples.txt") : string.Empty;
                 var generationText = ReadFile("generation.json");
                 var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
                     JsonSerializer.Serialize(new[] { prompt, examplesText, generationText }))));
@@ -83,16 +106,7 @@ public sealed class ChatConfiguration
                     settings.MemoryTokenBudget is < 500 or > 6000 ||
                     examples.Length > 40 || examples.Any(e => !ValidExample(e)))
                     throw new InvalidDataException();
-                var instruction = prompt;
-                if (examples.Length > 0)
-                {
-                    instruction += "\n\n## Приклади\n\nЦе окремі вигадані діалоги. Вони показують манеру, ритм і мову. Це не історія співрозмовника і не твоя біографія. Не копіюй репліки й не переноси деталі в справжню розмову, особливо вітання й перші відповіді: кожного разу кажи по-новому. Відповіді різної довжини, і далеко не всі закінчуються питанням. Кожен рядок відповіді це окреме повідомлення.";
-                    foreach (var example in examples)
-                        instruction += "\n\n---\n" + example;
-                    instruction += "\n\n---\n\nЦе були всі приклади. Далі справжня розмова. Відповідай на неї, а не на приклади. Пиши коротко, живо, по-людськи, як у месенджері. Реагуй на конкретне сказане й додавай власну думку, спостереження або доречне питання. Не копіюй зразки; поради давай на прохання.";
-                }
-                instruction += "\n\n" + ChatReplyFormat.InstructionFor(settings.Model);
-                current = new(instruction, settings, hash[..12], examples.Length);
+                current = new(prompt, examples, ChatReplyFormat.InstructionFor(settings.Model), settings, hash[..12]);
                 if (settings.Temperature is not null || settings.TopP is not null)
                     log.LogWarning("Legacy temperature/topP settings are ignored for gemini-3.5-flash-lite; remove them from generation.json");
                 log.LogInformation("Chat configuration loaded; directory {Directory}; SHA {Hash}; examples {Examples}; model {Model}",
