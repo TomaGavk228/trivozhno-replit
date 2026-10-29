@@ -51,6 +51,6 @@ bash scripts/bot.sh search-books --query 'як побороти тривожні
 
 ## Перевірка й документи
 
-Автоматичні тести видалені за рішенням власника. Для збірки: `bash scripts/dotnet.sh build src/Bot -c Release`. `bash scripts/bot.sh check-config` перевіряє завантаження промта й параметрів та показує SHA, модель і розмір контексту без AI-запиту. Ручні сценарії: [docs/MANUAL_SCENARIOS.md](docs/MANUAL_SCENARIOS.md).
+Автоматичні тести видалені за рішенням власника. Для збірки: `bash scripts/dotnet.sh build src/Bot -c Release`. `bash scripts/bot.sh check-config` перевіряє завантаження промта й параметрів та показує SHA, модель і розмір контексту без AI-запиту.
 
 [Переписка й пам'ять](docs/CHAT_CONTENT.md) · [Gemini](docs/GEMINI_SETUP.md) · [Обслуговування](docs/OPERATIONS.md) · [Railway](docs/RAILWAY.md). Ліцензія [AGPL-3.0](LICENSE); `/source` відкриває цю гілку.
