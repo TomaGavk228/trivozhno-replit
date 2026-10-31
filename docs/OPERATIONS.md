@@ -14,6 +14,22 @@ bash scripts/bot.sh audit-books
 
 `scripts/run.sh` застосовує міграції перед стартом. Нове оновлення прибирає службові колонки MoodConsentShown, MoodContextEnabled, SummaryNextAt, QueueNoticeShown, додає Outbox.LeaseUntil і переводить старий ConfirmMoodContext у Settings. Старі таблиці й міграції збережені. Самі переписки, факти, книги, настрій та нагадування не видаляються. Зупини попередній екземпляр перед оновленням.
 
+Міграція `PlusPaymentsHabits` лише додає: поля ліміту, «Друг+» і налаштувань друга в `Users`, `Reminders.Personal`, таблиці `Payments`, `Habits`, `HabitMarks` та індекси. Наявні дані не змінюються.
+
+## Платежі й Друг+
+
+```bash
+bash scripts/bot.sh list-payments --limit 50
+bash scripts/bot.sh list-payments --telegram-id 123456789
+bash scripts/bot.sh refund-payment TELEGRAM_PAYMENT_CHARGE_ID
+bash scripts/bot.sh plus-extend 123456789 --days 30
+bash scripts/bot.sh plus-cancel 123456789
+```
+
+`pre_checkout_query` відповідається одразу в poller без бази: payload рахунку містить тип, суму, Telegram ID і час створення; рахунок старший за добу або з іншою ціною відхиляється. `successful_payment` обробляється в звичайній черзі під блокуванням людини; унікальний індекс на `TelegramChargeId` робить повтор безпечним. `refund-payment` викликає `refundStarPayment`, позначає платіж поверненим і знімає відповідні дні Друг+. `plus-extend` додає дні від поточної дати закінчення (за замовчуванням 30), `plus-cancel` одразу завершує доступ. Записи платежів лишаються після «Видалити мої дані» (UserId стає порожнім), бо Telegram ID і charge id потрібні для повернення.
+
+Найпростіша перевірка оплати Stars: тимчасово постав `PLUS_PRICE_STARS=1`, оплати 1 ⭐ зі свого акаунта, потім поверни Stars через `refund-payment`. Для цього на акаунті має бути хоча б 1 ⭐.
+
 ## Доставка
 
 Два воркери з одним механізмом claim зберігають порядок адресата/частин. Блокування людини не тримається під час HTTP. Telegram rate gate: до 20/с загалом, пауза 1,1 с у приватному чаті, 3,1 с для каналу. Lease доставки — 90 с. Зависла відправка переходить у delivery_unknown без рестарту; її не відправляють сліпо повторно.

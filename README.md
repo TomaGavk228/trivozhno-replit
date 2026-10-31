@@ -19,7 +19,16 @@ bash scripts/run.sh
 
 Якщо гілки локально немає: `git switch --track origin/feat/gemini-3-5-flash-lite-2026-10-06`. Незбережені локальні зміни спочатку збережи; примусовий reset не потрібний. `run.sh` виконає restore, Release-збірку, міграції й запуск.
 
-Secrets: `DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`. Для зізнань — `CONFESSIONS_CHANNEL_ID`, або `FEATURE_CONFESSIONS=false`. `.env` автоматично не читається. Старі `AI_PROVIDER`, `GROQ_*`, `ZAI_*`, `GEMINI_MAX_CONCURRENCY` більше не використовуються: їх можна видалити. Паралельність задає один `AI_MAX_CONCURRENCY=2`. Решта необов'язкових параметрів — у [.env.example](.env.example).
+Secrets: `DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`. Нові необов'язкові: `CHAT_DAILY_FREE_MESSAGES=30`, `PLUS_DAILY_MAX_MESSAGES=300`, `PLUS_PRICE_STARS=70`, `DONATE_URL`, `TIKTOK_URL`, `SUPPORT_CONTACT`. Для зізнань — `CONFESSIONS_CHANNEL_ID`, або `FEATURE_CONFESSIONS=false`. `.env` автоматично не читається. Старі `AI_PROVIDER`, `GROQ_*`, `ZAI_*`, `GEMINI_MAX_CONCURRENCY` більше не використовуються: їх можна видалити. Паралельність задає один `AI_MAX_CONCURRENCY=2`. Решта необов'язкових параметрів — у [.env.example](.env.example).
+
+## Друг+, ліміт і донати
+
+- Безкоштовно `CHAT_DAILY_FREE_MESSAGES` (30) ходів у ШІ-чаті на добу за `BOT_TIMEZONE`. Кілька швидких повідомлень, склеєних в один хід, рахуються як одне. Після ліміту бот не викликає ШІ, зберігає повідомлення як `unanswered` і пропонує «⭐ Друг+» або «☕ Підтримати». Повідомлення, які розпізнає `CrisisSupport`, ідуть до ШІ завжди.
+- «⭐ Друг+» оплачується в Telegram Stars (`XTR`, без provider token): `PLUS_PRICE_STARS` (70) за 30 днів, без автопродовження. Повторна оплата додає 30 днів до поточної дати закінчення. Дає: чат без денного ліміту (технічна межа `PLUS_DAILY_MAX_MESSAGES`, 300), «Друг пише першим» у нагадуваннях, налаштування друга (ім'я, рід, тон), статистику настрою за 4 тижні й трекер звичок. За 3 дні й у день закінчення бот один раз нагадує про продовження.
+- Донати: 25/50/100 ⭐ (`/donate`, «☕ Підтримати проєкт» у налаштуваннях) і кнопка на банку Monobank, якщо задано `DONATE_URL`.
+- Без ШІ й для всіх: «🆘 Мені зараз погано» (`/sos`, кнопка в чаті й налаштуваннях), вправи «повільне дихання» і «5-4-3-2-1», підсумок тижня настрою з серією днів, `/share`.
+- Платежі зберігаються в таблиці `Payments` (charge id, тип, сума, дата, строк). Повторний `successful_payment` з тим самим charge id нічого не змінює. Операторські команди: `list-payments`, `refund-payment`, `plus-extend`, `plus-cancel` (див. [Обслуговування](docs/OPERATIONS.md)).
+- `SUPPORT_CONTACT` показує `/paysupport`, `TIKTOK_URL` додає посилання в привітання й `/help`. Меню команд Telegram оновлюється при кожному старті.
 
 ## Книжки
 
