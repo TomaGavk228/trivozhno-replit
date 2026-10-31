@@ -26,6 +26,14 @@ public sealed class BotOptions
     public bool Confessions { get; init; } = true;
     public bool Mood { get; init; } = true;
     public bool Reminders { get; init; } = true;
+    public int ChatDailyFree { get; init; } = 30;
+    public int PlusDailyMax { get; init; } = 300;
+    public int PlusPriceStars { get; init; } = 70;
+    public int PlusDays { get; init; } = 30;
+    public string DonateUrl { get; init; } = "";
+    public string TikTokUrl { get; init; } = "";
+    public string SupportContact { get; init; } = "";
+    public static readonly int[] DonationAmounts = [25, 50, 100];
 
     public static BotOptions Load(IConfiguration c) => new()
     {
@@ -40,8 +48,20 @@ public sealed class BotOptions
         ChatGatherMilliseconds = Int(c, "CHAT_MAX_GATHER_MS", 3000, 1200, 10000),
         ChunkSize = Int(c, "BOOK_CHUNK_CHARS", 1800, 1200, 2200), ChunkOverlap = Int(c, "BOOK_CHUNK_OVERLAP", 180, 0, 300),
         Timezone = c["BOT_TIMEZONE"] ?? "Europe/Kyiv", Conversation = Flag(c, "FEATURE_CONVERSATION"),
-        Confessions = Flag(c, "FEATURE_CONFESSIONS"), Mood = Flag(c, "FEATURE_MOOD"), Reminders = Flag(c, "FEATURE_REMINDERS")
+        Confessions = Flag(c, "FEATURE_CONFESSIONS"), Mood = Flag(c, "FEATURE_MOOD"), Reminders = Flag(c, "FEATURE_REMINDERS"),
+        ChatDailyFree = Int(c, "CHAT_DAILY_FREE_MESSAGES", 30, 1, 10000),
+        PlusDailyMax = Int(c, "PLUS_DAILY_MAX_MESSAGES", 300, 1, 10000),
+        PlusPriceStars = Int(c, "PLUS_PRICE_STARS", 70, 1, 10000),
+        DonateUrl = Url(c, "DONATE_URL"), TikTokUrl = Url(c, "TIKTOK_URL"),
+        SupportContact = (c["SUPPORT_CONTACT"] ?? "").Trim()
     };
+    private static string Url(IConfiguration c, string key)
+    {
+        var value = (c[key] ?? "").Trim();
+        if (value.Length == 0) return "";
+        return Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps
+            ? value : throw new InvalidOperationException($"Invalid {key}: use a full https:// link or leave it empty.");
+    }
     private static int Int(IConfiguration c, string key, int fallback, int min, int max) =>
         c[key] is null ? fallback : int.TryParse(c[key], out var x) && x >= min && x <= max ? x : throw new InvalidOperationException($"Invalid {key} ({min}..{max}).");
     private static bool Flag(IConfiguration c, string key) => c[key] is null || c[key] is "1" or "true";

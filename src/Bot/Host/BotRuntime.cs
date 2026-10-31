@@ -50,9 +50,14 @@ public sealed class Maintenance(IServiceScopeFactory scopes, UserLocks locks, IC
         await scanDb.Outbox.Where(x => x.Status == "sending" && (x.LeaseUntil == null || x.LeaseUntil < clock.UtcNow))
             .ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "delivery_unknown").SetProperty(y => y.LeaseUntil, (DateTimeOffset?)null)
                 .SetProperty(y => y.ErrorCode, "send-lease-expired"), ct);
+        // «Друг+» expiry notices: same windows as PlusHandler.Notices.
+        var tomorrow = scan.ServiceProvider.GetRequiredService<Trivozhno.Features.Plus.PlusHandler>().TomorrowStart();
+        var endedSince = clock.UtcNow.AddDays(-2); var warnUntil = clock.UtcNow.AddDays(3);
         var userIds = await scanDb.Users.AsNoTracking().Where(u =>
                 scanDb.Submissions.Any(s => s.UserId == u.Id && s.Status == "sending") ||
-                options.Reminders && options.Conversation && scanDb.Reminders.Any(r => r.UserId == u.Id && r.Enabled && r.NextDueAt <= clock.UtcNow))
+                options.Reminders && options.Conversation && scanDb.Reminders.Any(r => r.UserId == u.Id && r.Enabled && r.NextDueAt <= clock.UtcNow) ||
+                u.PlusUntil != null && (u.PlusEndNoticeFor != u.PlusUntil && u.PlusUntil < tomorrow && u.PlusUntil > endedSince ||
+                    u.PlusWarnedFor != u.PlusUntil && u.PlusUntil <= warnUntil && u.PlusUntil > clock.UtcNow))
             .Select(u => new { u.Id, u.TelegramId }).Take(100).ToListAsync(ct);
         foreach (var item in userIds)
         {
@@ -61,6 +66,7 @@ public sealed class Maintenance(IServiceScopeFactory scopes, UserLocks locks, IC
             var u = await db.Users.SingleOrDefaultAsync(x => x.Id == item.Id, ct); if (u is null) continue;
             await scope.ServiceProvider.GetRequiredService<ConfessionHandler>().Reconcile(u.Id, ct);
             if (options.Reminders && options.Conversation) await scope.ServiceProvider.GetRequiredService<ReminderHandler>().Schedule(u, ct);
+            scope.ServiceProvider.GetRequiredService<Trivozhno.Features.Plus.PlusHandler>().Notices(u);
             await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
         }
         // Failed/unknown non-confession deliveries cannot block an operation forever.
@@ -79,6 +85,9 @@ public sealed class Maintenance(IServiceScopeFactory scopes, UserLocks locks, IC
         await scanDb.Set<ApiUsage>().Where(x => x.At < clock.UtcNow.AddDays(-2)).ExecuteDeleteAsync(ct);
         await scanDb.Outbox.Where(x => x.Kind != "confession" && x.Status != "queued" && x.Status != "sending" && x.CreatedAt < clock.UtcNow.AddDays(-7)).ExecuteDeleteAsync(ct);
         await scanDb.Occurrences.Where(x => x.Status != "queued" && x.ScheduledAt < clock.UtcNow.AddDays(-30)).ExecuteDeleteAsync(ct);
+        // A personal reminder that could not be composed in time is skipped, not sent late.
+        await scanDb.Occurrences.Where(x => x.Status == "compose" && x.ScheduledAt < clock.UtcNow.AddHours(-2))
+            .ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "skipped"), ct);
         // A lost AI lease is recoverable without holding a database context across calls.
         await scanDb.Messages.Where(x => x.Status == "processing" && x.LeaseUntil < clock.UtcNow)
             .ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "queued").SetProperty(y => y.LeaseUntil, (DateTimeOffset?)null), ct);
@@ -87,7 +96,7 @@ public sealed class Maintenance(IServiceScopeFactory scopes, UserLocks locks, IC
 }
 
 public sealed class BotRuntime(IServiceScopeFactory scopes, InboxProcessor inbox, AiProcessor ai, OutboxProcessor outbox, Maintenance maintenance,
-    BotOptions options, WorkerStatus status, IClock clock, IHostApplicationLifetime lifetime, ILogger<BotRuntime> log) : BackgroundService
+    PersonalReminderComposer composer, BotIdentity identity, Trivozhno.Resources.Uk uk, BotOptions options, WorkerStatus status, IClock clock, IHostApplicationLifetime lifetime, ILogger<BotRuntime> log) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -95,7 +104,17 @@ public sealed class BotRuntime(IServiceScopeFactory scopes, InboxProcessor inbox
         {
             await using var lease = await BotLease.Acquire(options, stoppingToken);
             using var scope = scopes.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<ITelegramClient>().Validate(stoppingToken);
+            var telegram = scope.ServiceProvider.GetRequiredService<ITelegramClient>();
+            identity.Username = await telegram.Validate(stoppingToken);
+            // The command menu is cosmetic: a failure must not stop the bot.
+            try
+            {
+                await telegram.SetCommands(new[] { "menu", "talk", "mood", "sos", "settings", "plus", "donate", "share", "help", "paysupport", "terms" }
+                    .Select(c => new BotCommand(c, uk[$"cmd.{c}"])).ToArray(), stoppingToken);
+            }
+            catch (Exception e) when (e is TelegramFailure or HttpRequestException or TaskCanceledException && !stoppingToken.IsCancellationRequested)
+            { log.LogWarning("Telegram command menu not updated: {Category}", e.GetType().Name); }
+            if (options.SupportContact.Length == 0) log.LogWarning("SUPPORT_CONTACT is empty: /paysupport has no contact to show.");
             var db = scope.ServiceProvider.GetRequiredService<BotDb>();
             if ((await db.Database.GetPendingMigrationsAsync(stoppingToken)).Any()) throw new InvalidOperationException("Run migrate before starting workers.");
             await maintenance.Recover(stoppingToken); status.Running = true; status.Heartbeat = clock.UtcNow;
@@ -115,6 +134,7 @@ public sealed class BotRuntime(IServiceScopeFactory scopes, InboxProcessor inbox
             };
             for (var i = 0; i < options.AiConcurrency; i++) tasks.Add(Loop("ai", ai.Step, 150, stoppingToken));
             for (var i = 0; i < 2; i++) tasks.Add(Loop("outbox", outbox.Step, 50, stoppingToken));
+            if (options.Reminders && options.Conversation) tasks.Add(Loop("personal-reminder", composer.Step, 5000, stoppingToken));
             await Task.WhenAll(tasks);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }

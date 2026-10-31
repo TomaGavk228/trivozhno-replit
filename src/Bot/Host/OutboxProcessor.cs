@@ -45,8 +45,10 @@ public sealed class OutboxProcessor(IServiceScopeFactory scopes, UserLocks locks
         {
             try
             {
-                telegramId = await scope.ServiceProvider.GetRequiredService<ITelegramClient>()
-                    .Send(delivery.Destination, delivery.Item.Text, delivery.Item.Markup, ct);
+                var telegram = scope.ServiceProvider.GetRequiredService<ITelegramClient>();
+                telegramId = delivery.Item.Kind == "invoice"
+                    ? await telegram.SendInvoice(delivery.Destination, delivery.Item.Text, ct)
+                    : await telegram.Send(delivery.Destination, delivery.Item.Text, delivery.Item.Markup, ct);
             }
             catch (TelegramFailure error) { failure = error; }
             catch (DeliveryUnknownException) { unknown = true; }

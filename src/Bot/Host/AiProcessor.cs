@@ -84,6 +84,9 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             {
                 var context = await scope.ServiceProvider.GetRequiredService<ChatHistory>()
                     .Build(user, job, generationHolder.Value.Token);
+                // «Друг+» friend settings: one short system note right after the main instruction.
+                if (Trivozhno.Features.Friend.FriendHandler.Note(user, clock.UtcNow) is { Length: > 0 } note)
+                    context = context with { Messages = [context.Messages[0], new AiMessage("system", note), .. context.Messages.Skip(1)] };
                 log.LogInformation("AI job {Operation}; queue wait {QueueMs} ms; input estimate {InputTokens}",
                     job.Id, (clock.UtcNow - job.CreatedAt).TotalMilliseconds, TokenEstimate.Count(context.Messages));
                 // A typing indicator is cosmetic; its failure must not lose the reply.
@@ -145,7 +148,7 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
             {
                 current.Status = "unanswered";
                 var crisis = CrisisSupport.IfGenerationFailed(current.TurnText ?? current.Text);
-                if (crisis is not null) ui.Text(u, crisis, ui.Reply("chat.end"));
+                if (crisis is not null) ui.Text(u, crisis, ui.ChatKeyboard());
                 else ui.Say(u, error);
             }
             else
@@ -165,7 +168,7 @@ public sealed class AiProcessor(IServiceScopeFactory scopes, UserLocks locks, IC
                     SourcesJson = JsonSerializer.Serialize(new { conversation_state = result.ConversationState, sources = result.Sources }, ChatReplyFormat.Json)
                 });
                 await scope.ServiceProvider.GetRequiredService<ChatMemory>().Save(u, current, result.MemoryUpdates, ct);
-                ui.Text(u, result.Text, ui.Reply("chat.end"), "ai", job.SessionId, job.MemoryVersion,
+                ui.Text(u, result.Text, ui.ChatKeyboard(), "ai", job.SessionId, job.MemoryVersion,
                     turnRevision: job.TurnRevision, replyToId: job.Id);
             }
 

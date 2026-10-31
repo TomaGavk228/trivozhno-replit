@@ -21,6 +21,7 @@ public static class ServiceRegistration
     {
         services.AddSingleton(options); services.AddSingleton<IClock, SystemClock>(); services.AddSingleton<Uk>(); services.AddSingleton<UserLocks>();
         services.AddSingleton<WorkerStatus>(); services.AddSingleton<ActiveGenerations>(); services.AddSingleton<TelegramRateGate>();
+        services.AddSingleton<BotIdentity>();
         services.AddDbContext<BotDb>(b => b.UseNpgsql(ConnectionStrings.Parse(options.Database)).EnableSensitiveDataLogging(false).EnableDetailedErrors(false));
         // Suppress HttpClient URLs (Telegram embeds the secret in the path) and SQL payloads.
         services.AddLogging(b => { b.AddFilter("System.Net.Http.HttpClient", LogLevel.None); b.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.None); });
@@ -33,6 +34,9 @@ public static class ServiceRegistration
         services.AddScoped<BookImporter>(); services.AddScoped<Ui>(); services.AddScoped<DraftStore>(); services.AddScoped<Router>();
         services.AddScoped<ConversationHandler>(); services.AddScoped<ConfessionHandler>(); services.AddScoped<MoodHandler>();
         services.AddScoped<ReminderHandler>(); services.AddScoped<SettingsHandler>();
+        services.AddScoped<Trivozhno.Features.Plus.ChatLimits>(); services.AddScoped<Trivozhno.Features.Plus.PlusHandler>();
+        services.AddScoped<Trivozhno.Features.Support.SupportHandler>(); services.AddScoped<Trivozhno.Features.Habits.HabitHandler>();
+        services.AddScoped<Trivozhno.Features.Friend.FriendHandler>(); services.AddSingleton<PersonalReminderComposer>();
         services.AddSingleton<InboxProcessor>(); services.AddSingleton<AiProcessor>(); services.AddSingleton<OutboxProcessor>(); services.AddSingleton<Maintenance>();
         return services;
     }

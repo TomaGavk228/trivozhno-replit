@@ -5,15 +5,22 @@ using Trivozhno.Host;
 namespace Trivozhno.Infrastructure.Telegram;
 
 // Retain only routing fields; never persist Telegram names, usernames or whole profiles.
-public sealed record BotInput(long UpdateId, long TelegramId, string? Text, string? Action, bool Unsupported = false);
+public sealed record BotInput(long UpdateId, long TelegramId, string? Text, string? Action, bool Unsupported = false, PaymentInfo? Payment = null);
+// Only service fields of a successful Telegram payment; no card or profile data exists for Stars.
+public sealed record PaymentInfo(string Currency, int Amount, string Payload, string ChargeId, string ProviderChargeId);
+public sealed record BotCommand(string Command, string Description);
 public sealed record PollBatch(IReadOnlyList<BotInput> Inputs, long NextOffset);
 public interface ITelegramClient
 {
     Task<PollBatch> Poll(long offset, CancellationToken ct);
     Task<long> Send(long destination, string text, string? markup, CancellationToken ct);
     Task Typing(long destination, CancellationToken ct);
-    Task Validate(CancellationToken ct);
+    Task<string> Validate(CancellationToken ct);
+    Task<long> SendInvoice(long destination, string invoiceJson, CancellationToken ct);
+    Task SetCommands(IReadOnlyList<BotCommand> commands, CancellationToken ct);
 }
+// Bot username from getMe, used for share links.
+public sealed class BotIdentity { public volatile string Username = ""; }
 public sealed class TelegramFailure(int code, int retryAfter = 0) : Exception($"Telegram code {code}")
 {
     public int Code { get; } = code;
@@ -21,7 +28,7 @@ public sealed class TelegramFailure(int code, int retryAfter = 0) : Exception($"
 }
 public sealed class DeliveryUnknownException : Exception { }
 
-public sealed class TelegramClient(HttpClient http, BotOptions options) : ITelegramClient
+public sealed class TelegramClient(HttpClient http, BotOptions options, IClock clock, Trivozhno.Resources.Uk uk) : ITelegramClient
 {
     private string Url(string method) => $"https://api.telegram.org/bot{options.TelegramToken}/{method}";
     private async Task<JsonDocument> Call(string method, object payload, CancellationToken ct)
@@ -36,20 +43,38 @@ public sealed class TelegramClient(HttpClient http, BotOptions options) : ITeleg
         }
         return json;
     }
-    public async Task Validate(CancellationToken ct)
+    public async Task<string> Validate(CancellationToken ct)
     {
         using var me = await Call("getMe", new { }, ct);
         using var hook = await Call("getWebhookInfo", new { }, ct);
         if (hook.RootElement.GetProperty("result").GetProperty("url").GetString() is { Length: > 0 })
             throw new InvalidOperationException("Webhook exists. Use the documented deleteWebhook step for the TEST bot first.");
+        return me.RootElement.GetProperty("result").TryGetProperty("username", out var name) ? name.GetString() ?? "" : "";
+    }
+    public async Task SetCommands(IReadOnlyList<BotCommand> commands, CancellationToken ct)
+    {
+        using var _ = await Call("setMyCommands", new { commands = commands.Select(x => new { command = x.Command, description = x.Description }) }, ct);
     }
     public async Task<PollBatch> Poll(long offset, CancellationToken ct)
     {
-        using var json = await Call("getUpdates", new { offset, timeout = 25, limit = 100, allowed_updates = new[] { "message", "callback_query" } }, ct);
+        using var json = await Call("getUpdates", new { offset, timeout = 25, limit = 100, allowed_updates = new[] { "message", "callback_query", "pre_checkout_query" } }, ct);
         var inputs = new List<BotInput>(); var next = offset;
         foreach (var update in json.RootElement.GetProperty("result").EnumerateArray())
         {
             var id = update.GetProperty("update_id").GetInt64(); next = Math.Max(next, id + 1);
+            if (update.TryGetProperty("pre_checkout_query", out var checkout))
+            {
+                // Telegram waits at most 10 seconds, so the stateless check is answered right here.
+                var error = Trivozhno.Features.Plus.PaymentPayload.Check(checkout.GetProperty("from").GetProperty("id").GetInt64(),
+                    checkout.GetProperty("currency").GetString(), checkout.GetProperty("total_amount").GetInt32(),
+                    checkout.GetProperty("invoice_payload").GetString(), options, clock.UtcNow);
+                object answer = error is null
+                    ? new { pre_checkout_query_id = checkout.GetProperty("id").GetString(), ok = true }
+                    : new { pre_checkout_query_id = checkout.GetProperty("id").GetString(), ok = false, error_message = uk[error] };
+                try { using var ack = await Call("answerPreCheckoutQuery", answer, ct); }
+                catch (Exception e) when (e is TelegramFailure or HttpRequestException or TaskCanceledException) { if (ct.IsCancellationRequested) ct.ThrowIfCancellationRequested(); }
+                continue;
+            }
             if (update.TryGetProperty("callback_query", out var cb))
             {
                 try { using var ack = await Call("answerCallbackQuery", new { callback_query_id = cb.GetProperty("id").GetString() }, ct); }
@@ -63,6 +88,14 @@ public sealed class TelegramClient(HttpClient http, BotOptions options) : ITeleg
             {
                 var from = sender.GetProperty("id").GetInt64();
                 if (from != message.GetProperty("chat").GetProperty("id").GetInt64()) continue;
+                if (message.TryGetProperty("successful_payment", out var paid))
+                {
+                    inputs.Add(new(id, from, null, null, false, new(paid.GetProperty("currency").GetString() ?? "",
+                        paid.GetProperty("total_amount").GetInt32(), paid.GetProperty("invoice_payload").GetString() ?? "",
+                        paid.GetProperty("telegram_payment_charge_id").GetString() ?? "",
+                        paid.TryGetProperty("provider_payment_charge_id", out var provider) ? provider.GetString() ?? "" : "")));
+                    continue;
+                }
                 inputs.Add(new(id, from, message.TryGetProperty("text", out var txt) ? txt.GetString() : null, null, !message.TryGetProperty("text", out _)));
             }
         }
@@ -82,6 +115,19 @@ public sealed class TelegramClient(HttpClient http, BotOptions options) : ITeleg
         }
         catch (TelegramFailure e) when (e.Code >= 500) { throw new DeliveryUnknownException(); }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException) { throw new DeliveryUnknownException(); }
+    }
+    public async Task<long> SendInvoice(long destination, string invoiceJson, CancellationToken ct)
+    {
+        try
+        {
+            using var invoice = JsonDocument.Parse(invoiceJson);
+            var payload = new Dictionary<string, object?> { ["chat_id"] = destination };
+            foreach (var property in invoice.RootElement.EnumerateObject()) payload[property.Name] = property.Value;
+            using var json = await Call("sendInvoice", payload, ct);
+            return json.RootElement.GetProperty("result").GetProperty("message_id").GetInt64();
+        }
+        catch (TelegramFailure e) when (e.Code >= 500) { throw new DeliveryUnknownException(); }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { throw new DeliveryUnknownException(); }
     }
     public async Task Typing(long destination, CancellationToken ct)
     {

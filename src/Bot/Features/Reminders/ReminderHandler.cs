@@ -38,8 +38,24 @@ public sealed class ReminderHandler(BotDb db, Ui ui, Uk uk, IClock clock, BotOpt
     {
         u.Go(UserState.Settings); u.PendingAction = "reminders";
         var r = await db.Reminders.SingleOrDefaultAsync(x => x.UserId == u.Id, ct);
-        ui.Text(u, r?.Enabled == true ? uk.Format("reminder.current", r.IntervalDays, r.LocalTime) : uk["reminder.off"],
-            ui.Inline(u, ("rem:change", "reminder.change"), (r?.Enabled == true ? "rem:disable" : "rem:enable", r?.Enabled == true ? "reminder.disable" : "reminder.enable"), ("exit", "exit")));
+        var on = r?.Enabled == true;
+        var text = on ? uk.Format("reminder.current", r!.IntervalDays, r.LocalTime) : uk["reminder.off"];
+        var rows = new List<Ui.Button[]> { new[] { ui.B("reminder.change", "rem:change") },
+            new[] { on ? ui.B("reminder.disable", "rem:disable") : ui.B("reminder.enable", "rem:enable") } };
+        if (on && u.IsPlus(clock.UtcNow))
+        {
+            text += "\n" + uk[r!.Personal ? "reminder.personal.on" : "reminder.personal.off"];
+            rows.Add([ui.B(r.Personal ? "reminder.personal.disable" : "reminder.personal.enable", r.Personal ? "rem:personal:off" : "rem:personal:on")]);
+        }
+        else if (on) rows.Add([ui.B("reminder.personal.plus", "plus:show")]);
+        rows.Add([ui.B("back.settings", "settings:show")]);
+        ui.Text(u, text, ui.Keyboard(u, rows.ToArray()));
+    }
+    public async Task Personal(BotUser u, bool enable, CancellationToken ct)
+    {
+        var r = await db.Reminders.SingleOrDefaultAsync(x => x.UserId == u.Id, ct);
+        if (r is not null && (u.IsPlus(clock.UtcNow) || !enable)) { r.Personal = enable; r.Version++; await CancelPending(u, ct); }
+        await db.SaveChangesAsync(ct); await Show(u, ct);
     }
     public void Frequency(BotUser u)
     {
@@ -78,7 +94,8 @@ public sealed class ReminderHandler(BotDb db, Ui ui, Uk uk, IClock clock, BotOpt
     public async Task CancelPending(BotUser u, CancellationToken ct)
     {
         await db.Outbox.Where(x => x.UserId == u.Id && x.Kind == "reminder" && x.Status == "queued").ExecuteDeleteAsync(ct);
-        await db.Occurrences.Where(x => x.UserId == u.Id && x.Status == "queued").ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "cancelled"), ct);
+        await db.Occurrences.Where(x => x.UserId == u.Id && (x.Status == "queued" || x.Status == "compose"))
+            .ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "cancelled"), ct);
     }
     public async Task Schedule(BotUser u, CancellationToken ct)
     {
@@ -88,9 +105,16 @@ public sealed class ReminderHandler(BotDb db, Ui ui, Uk uk, IClock clock, BotOpt
         if (!await db.Occurrences.AnyAsync(x => x.UserId == u.Id && x.ScheduledAt == due, ct))
         {
             var send = !u.Blocked && u.State == UserState.MainMenu && clock.UtcNow - due <= TimeSpan.FromHours(1);
-            db.Occurrences.Add(new() { UserId = u.Id, ScheduledAt = due, Version = r.Version, Status = send ? "queued" : "skipped" });
-            if (send) ui.Text(u, uk["reminder.message"], ui.Inline(u, ("rem:start", "reminder.start")), "reminder", reminderVersion: r.Version);
+            // «Друг пише першим»: PersonalReminderComposer writes the text outside the lock.
+            var personal = send && r.Personal && u.IsPlus(clock.UtcNow);
+            db.Occurrences.Add(new() { UserId = u.Id, ScheduledAt = due, Version = r.Version, Status = personal ? "compose" : send ? "queued" : "skipped" });
+            if (send && !personal) await Send(u, uk["reminder.message"], r.Version, ct);
         }
         r.NextDueAt = ReminderDates.Next(due, clock.UtcNow, r.IntervalDays, r.LocalTime, r.Timezone);
+    }
+    public async Task Send(BotUser u, string text, long version, CancellationToken ct)
+    {
+        Ui.Button[] habits = u.IsPlus(clock.UtcNow) && await db.Habits.AnyAsync(x => x.UserId == u.Id, ct) ? [ui.B("reminder.habits", "habit:list")] : [];
+        ui.Text(u, text, ui.Keyboard(u, [ui.B("reminder.start", "rem:start")], habits), "reminder", reminderVersion: version);
     }
 }

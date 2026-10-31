@@ -147,8 +147,72 @@ public static class OperatorCommands
                 }));
                 return 0;
             }
+            case "list-payments":
+            {
+                var limit = int.TryParse(Option(args, "--limit"), out var l) ? Math.Clamp(l, 1, 1000) : 50;
+                var payments = db.Payments.AsNoTracking();
+                if (long.TryParse(Option(args, "--telegram-id"), out var who)) payments = payments.Where(x => x.TelegramId == who);
+                Console.WriteLine(JsonSerializer.Serialize(await payments.OrderByDescending(x => x.PaidAt).Take(limit)
+                    .Select(x => new { x.Id, x.TelegramId, x.Kind, x.Amount, x.Currency, x.TelegramChargeId, x.PaidAt, x.PeriodStart, x.PeriodEnd, x.RefundedAt })
+                    .ToListAsync(ct)));
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    activePlus = await db.Users.CountAsync(x => x.PlusUntil > DateTimeOffset.UtcNow, ct),
+                    starsTotal = await db.Payments.Where(x => x.RefundedAt == null).SumAsync(x => (long?)x.Amount, ct) ?? 0
+                }));
+                return 0;
+            }
+            case "refund-payment":
+            {
+                if (args.Length < 2) throw new InvalidOperationException("Supply a telegram_payment_charge_id.");
+                if (options.TelegramToken.Length == 0) throw new InvalidOperationException("Set TELEGRAM_BOT_TOKEN in Secrets.");
+                var payment = await db.Payments.SingleOrDefaultAsync(x => x.TelegramChargeId == args[1], ct);
+                if (payment is null) { Console.Error.WriteLine("Платіж не знайдено."); return 1; }
+                if (payment.RefundedAt is not null) { Console.Error.WriteLine("Цей платіж уже повернуто."); return 1; }
+                using (var http = new HttpClient { Timeout = TimeSpan.FromSeconds(35) })
+                {
+                    using var response = await http.PostAsJsonAsync($"https://api.telegram.org/bot{options.TelegramToken}/refundStarPayment",
+                        new { user_id = payment.TelegramId, telegram_payment_charge_id = payment.TelegramChargeId }, ct);
+                    using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+                    if (!json.RootElement.GetProperty("ok").GetBoolean())
+                    {
+                        Console.Error.WriteLine("Telegram відхилив повернення: " +
+                            (json.RootElement.TryGetProperty("description", out var d) ? d.GetString() : "unknown"));
+                        return 1;
+                    }
+                }
+                payment.RefundedAt = DateTimeOffset.UtcNow;
+                // A refunded «Друг+» period is taken back from the current end date.
+                if (payment.Kind == "plus" && payment.UserId is { } owner && payment.PeriodStart is { } start && payment.PeriodEnd is { } end)
+                {
+                    var user = await db.Users.SingleOrDefaultAsync(x => x.Id == owner, ct);
+                    if (user?.PlusUntil is { } until)
+                    {
+                        var rest = until - (end - start);
+                        user.PlusUntil = rest > DateTimeOffset.UtcNow ? rest : null;
+                    }
+                }
+                await db.SaveChangesAsync(ct);
+                Console.WriteLine("Stars повернуто, платіж позначено як повернений."); return 0;
+            }
+            case "plus-extend":
+            case "plus-cancel":
+            {
+                if (args.Length < 2 || !long.TryParse(args[1], out var telegramId)) throw new InvalidOperationException("Supply a Telegram ID.");
+                var user = await db.Users.SingleOrDefaultAsync(x => x.TelegramId == telegramId, ct);
+                if (user is null) { Console.Error.WriteLine("Користувача не знайдено (потрібен /start у боті)."); return 1; }
+                if (args[0] == "plus-cancel") user.PlusUntil = null;
+                else
+                {
+                    var days = int.TryParse(Option(args, "--days"), out var d) ? Math.Clamp(d, 1, 3650) : options.PlusDays;
+                    var now = DateTimeOffset.UtcNow;
+                    user.PlusUntil = (user.PlusUntil > now ? user.PlusUntil.Value : now).AddDays(days);
+                }
+                await db.SaveChangesAsync(ct);
+                Console.WriteLine(JsonSerializer.Serialize(new { user.TelegramId, user.PlusUntil })); return 0;
+            }
             default:
-                Console.Error.WriteLine("Commands: serve, migrate, check-config, channel-id, delete-webhook, import-books --path DIR, reindex-books, list-books, audit-books, deactivate-book ID, search-books --query TEXT, inspect-outbox, mark-delivered ID --message-id ID, retry-delivery ID [--accept-duplicate-risk], metrics"); return 2;
+                Console.Error.WriteLine("Commands: serve, migrate, check-config, channel-id, delete-webhook, import-books --path DIR, reindex-books, list-books, audit-books, deactivate-book ID, search-books --query TEXT, inspect-outbox, mark-delivered ID --message-id ID, retry-delivery ID [--accept-duplicate-risk], metrics, list-payments [--limit N] [--telegram-id ID], refund-payment CHARGE_ID, plus-extend TELEGRAM_ID [--days N], plus-cancel TELEGRAM_ID"); return 2;
         }
     }
     private static string? Option(string[] args, string option)

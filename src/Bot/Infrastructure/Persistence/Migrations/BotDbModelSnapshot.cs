@@ -76,6 +76,12 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
                     b.Property<bool>("Blocked")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("ChatCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly?>("ChatCountDay")
+                        .HasColumnType("date");
+
                     b.Property<string>("ChatStyleProfile")
                         .IsRequired()
                         .HasColumnType("text");
@@ -85,6 +91,18 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
 
                     b.Property<bool>("CustomTime")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("FriendGender")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("FriendName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("FriendTone")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<long?>("HistoryCursorId")
                         .HasColumnType("bigint");
@@ -111,6 +129,15 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
                     b.Property<int>("PendingFrequency")
                         .HasColumnType("integer");
 
+                    b.Property<DateTimeOffset?>("PlusEndNoticeFor")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("PlusUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("PlusWarnedFor")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("ReminderPromptShown")
                         .HasColumnType("boolean");
 
@@ -133,6 +160,8 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("PlusUntil");
 
                     b.HasIndex("TelegramId")
                         .IsUnique();
@@ -353,6 +382,53 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
                     b.HasIndex("DraftId", "Id");
 
                     b.ToTable("DraftParts");
+                });
+
+            modelBuilder.Entity("Trivozhno.Infrastructure.Persistence.Habit", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Id");
+
+                    b.ToTable("Habits");
+                });
+
+            modelBuilder.Entity("Trivozhno.Infrastructure.Persistence.HabitMark", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateOnly>("Day")
+                        .HasColumnType("date");
+
+                    b.Property<long>("HabitId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HabitId", "Day")
+                        .IsUnique();
+
+                    b.ToTable("HabitMarks");
                 });
 
             modelBuilder.Entity("Trivozhno.Infrastructure.Persistence.InboxUpdate", b =>
@@ -578,6 +654,63 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
                     b.ToTable("Outbox");
                 });
 
+            modelBuilder.Entity("Trivozhno.Infrastructure.Persistence.Payment", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("Amount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("PaidAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("PeriodEnd")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("PeriodStart")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ProviderChargeId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("RefundedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TelegramChargeId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long>("TelegramId")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TelegramChargeId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("TelegramId", "PaidAt");
+
+                    b.ToTable("Payments");
+                });
+
             modelBuilder.Entity("Trivozhno.Infrastructure.Persistence.PollCheckpoint", b =>
                 {
                     b.Property<int>("Id")
@@ -637,6 +770,9 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTimeOffset>("NextDueAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Personal")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Timezone")
                         .IsRequired()
@@ -709,6 +845,24 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Trivozhno.Infrastructure.Persistence.Habit", b =>
+                {
+                    b.HasOne("Trivozhno.Infrastructure.Persistence.BotUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Trivozhno.Infrastructure.Persistence.HabitMark", b =>
+                {
+                    b.HasOne("Trivozhno.Infrastructure.Persistence.Habit", null)
+                        .WithMany()
+                        .HasForeignKey("HabitId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Trivozhno.Infrastructure.Persistence.KnowledgeChunk", b =>
                 {
                     b.HasOne("Trivozhno.Infrastructure.Persistence.KnowledgeSource", null)
@@ -733,6 +887,14 @@ namespace Trivozhno.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("Trivozhno.Infrastructure.Persistence.Payment", b =>
+                {
+                    b.HasOne("Trivozhno.Infrastructure.Persistence.BotUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("Trivozhno.Infrastructure.Persistence.ReminderOccurrence", b =>

@@ -5,16 +5,24 @@ using Trivozhno.Infrastructure.Persistence;
 
 namespace Trivozhno.Features.Settings;
 
-public sealed class SettingsHandler(BotDb db, Ui ui, BotOptions options, Trivozhno.Resources.Uk uk, ActiveGenerations active)
+public sealed class SettingsHandler(BotDb db, Ui ui, BotOptions options, Trivozhno.Resources.Uk uk, ActiveGenerations active,
+    IClock clock, Trivozhno.Features.Plus.PlusHandler plus)
 {
     public void Show(BotUser u)
     {
         u.Go(UserState.Settings); u.PendingAction = "";
-        var rows = new List<(string, string)>();
-        if (options.Reminders && options.Conversation) rows.Add(("settings:reminders", "settings.reminders"));
-        rows.Add(("settings:clear", "settings.clear")); rows.Add(("settings:delete", "settings.delete"));
-        rows.Add(("settings:about", "settings.about")); rows.Add(("exit", "exit"));
-        ui.Say(u, "settings.title", ui.Inline(u, rows.ToArray()));
+        var isPlus = u.IsPlus(clock.UtcNow);
+        var plusButton = isPlus ? new Ui.Button(uk.Format("settings.plus.active", plus.Date(u.PlusUntil!.Value)), "plus:show") : ui.B("plus.button", "plus:show");
+        var first = new List<Ui.Button>();
+        if (options.Reminders && options.Conversation) first.Add(ui.B("settings.reminders", "settings:reminders"));
+        first.Add(plusButton);
+        Ui.Button[] plusRow = options.Conversation ? [ui.B("settings.friend", "settings:friend"), ui.B("settings.habits", "habit:list")] : [ui.B("settings.habits", "habit:list")];
+        var text = uk["settings.title"] + "\n\n" + (isPlus ? uk.Format("settings.plus.status", plus.Date(u.PlusUntil!.Value)) : uk["settings.plus.offer"]);
+        ui.Text(u, text, ui.Keyboard(u, first.ToArray(), plusRow,
+            [ui.B("sos.button", "sos")],
+            [ui.B("donate.button.long", "donate:show"), ui.B("share.button.menu", "share")],
+            [ui.B("settings.clear", "settings:clear"), ui.B("settings.delete", "settings:delete")],
+            [ui.B("settings.about", "settings:about"), ui.B("exit", "exit")]));
     }
     public void ConfirmClear(BotUser u)
     { u.Go(UserState.ConfirmClearMemory); ui.Say(u, "settings.clear.confirm", ui.Inline(u, ("settings:clear:yes", "settings.clear.yes"), ("settings:cancel", "cancel"))); }

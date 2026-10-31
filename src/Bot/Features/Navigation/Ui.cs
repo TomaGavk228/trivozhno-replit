@@ -10,12 +10,47 @@ namespace Trivozhno.Features.Navigation;
 public sealed class Ui(BotDb db, Uk uk, IClock clock, BotOptions options, ActiveGenerations active)
 {
     public static string RemoveKeyboard => "{\"remove_keyboard\":true}";
-    public string Reply(params string[] keys) => JsonSerializer.Serialize(new
-    { keyboard = keys.Select(k => new[] { new { text = uk[k] } }), resize_keyboard = true, is_persistent = true });
+    public sealed record Button(string Text, string? Code = null, string? Url = null);
+    // Only irreversible confirmations carry the one-time UiToken. Navigation
+    // buttons stay usable after later transitions; Router checks the state.
+    public static bool Guarded(string code) => code is "settings:clear:yes" or "settings:delete:yes" or "conf:send" or "discard:yes"
+        || code.StartsWith("habit:d:", StringComparison.Ordinal);
+    public static string Data(BotUser u, string code) => Guarded(code) ? $"{code}|{u.UiToken}" : code;
+    public string Reply(params string[] keys) => ReplyRows(true, keys.Select(k => new[] { k }).ToArray());
+    public string ReplyRows(bool persistent, params string[][] rows) => JsonSerializer.Serialize(new
+    { keyboard = rows.Select(r => r.Select(k => new { text = uk[k] })), resize_keyboard = true, is_persistent = persistent });
+    // The chat keyboard can be folded with Telegram's keyboard icon; the buttons stay available.
+    public string ChatKeyboard() => ReplyRows(false, new[] { "sos.button", "chat.end" });
+    public string MainKeyboard()
+    {
+        var keys = new List<string>();
+        if (options.Conversation) keys.Add("menu.talk");
+        if (options.Confessions) keys.Add("menu.confession");
+        if (options.Mood) keys.Add("menu.mood");
+        keys.Add("menu.settings");
+        return ReplyRows(true, keys.Chunk(2).ToArray());
+    }
+    public Button B(string key, string code) => new(uk[key], code);
+    public Button Link(string key, string url) => new(uk[key], null, url);
+    public string Keyboard(BotUser u, params Button[][] rows) => JsonSerializer.Serialize(new
+    {
+        inline_keyboard = rows.Where(r => r.Length > 0).Select(r => r.Select(b => b.Url is null
+            ? (object)new { text = b.Text, callback_data = Data(u, b.Code!) } : new { text = b.Text, url = b.Url }))
+    });
     public string Inline(BotUser u, params (string code, string key)[] rows) => JsonSerializer.Serialize(new
-    { inline_keyboard = rows.Select(r => new[] { new { text = uk[r.key], callback_data = $"{r.code}|{u.UiToken}" } }) });
+    { inline_keyboard = rows.Select(r => new[] { new { text = uk[r.key], callback_data = Data(u, r.code) } }) });
     public string InlineText(BotUser u, params (string code, string text)[] rows) => JsonSerializer.Serialize(new
-    { inline_keyboard = rows.Select(r => new[] { new { text = r.text, callback_data = $"{r.code}|{u.UiToken}" } }) });
+    { inline_keyboard = rows.Select(r => new[] { new { text = r.text, callback_data = Data(u, r.code) } }) });
+    // A Stars invoice goes through the same ordered outbox as ordinary messages.
+    public void Invoice(BotUser u, string title, string description, string payload, int amount)
+    {
+        db.Outbox.Add(new()
+        {
+            UserId = u.Id, Destination = u.TelegramId, Kind = "invoice", OperationId = Guid.NewGuid(), PartIndex = 0,
+            Text = JsonSerializer.Serialize(new { title, description, payload, currency = "XTR", prices = new[] { new { label = title, amount } } }),
+            CreatedAt = clock.UtcNow, AvailableAt = clock.UtcNow
+        });
+    }
     public void Say(BotUser u, string key, string? markup = null) => Text(u, uk[key], markup);
     public void Text(BotUser u, string text, string? markup = null, string kind = "ui", Guid? sessionId = null, long? memoryVersion = null, long? reminderVersion = null,
         long? turnRevision = null, long? replyToId = null) =>
@@ -39,37 +74,11 @@ public sealed class Ui(BotDb db, Uk uk, IClock clock, BotOptions options, Active
     {
         u.Go(UserState.MainMenu);
         u.PendingAction = "";
-
-        var keys = new List<string>();
-        var descriptions = new List<string>();
-
-        if (options.Conversation)
-        {
-            keys.Add("menu.talk");
-            descriptions.Add(uk["description.talk"]);
-        }
-
-        if (options.Confessions)
-        {
-            keys.Add("menu.confession");
-            descriptions.Add(uk["description.confession"]);
-        }
-
-        if (options.Mood)
-        {
-            keys.Add("menu.mood");
-            descriptions.Add(uk["description.mood"]);
-        }
-
-        keys.Add("menu.settings");
-        descriptions.Add(uk["description.settings"]);
-
         var text = firstStart
-            ? uk.Format("welcome", string.Join('\n', descriptions))
+            ? uk["welcome"] + (options.TikTokUrl.Length > 0 ? "\n\n" + uk.Format("welcome.tiktok", options.TikTokUrl) : "")
             : message ?? uk["menu.title"];
-
-        Text(u, text, Reply(keys.ToArray()));
-        }
+        Text(u, text, MainKeyboard());
+    }
     public void OfferReminder(BotUser u)
     {
         if (!options.Reminders || !options.Conversation || u.ReminderPromptShown || u.State != UserState.MainMenu) return;

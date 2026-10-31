@@ -7,14 +7,15 @@ using Trivozhno.Infrastructure.Telegram;
 
 namespace Trivozhno.Features.Conversation;
 
-public sealed class ConversationHandler(BotDb db, Ui ui, IClock clock, BotOptions options, ActiveGenerations active)
+public sealed class ConversationHandler(BotDb db, Ui ui, IClock clock, BotOptions options, ActiveGenerations active,
+    Trivozhno.Features.Plus.ChatLimits limits)
 {
     public void Open(BotUser u)
     {
         u.Go(UserState.ChatActive);
         var session = new ChatSession { UserId = u.Id, StartedAt = clock.UtcNow };
         db.Sessions.Add(session); u.SessionId = session.Id;
-        ui.Say(u, "chat.invite", ui.Reply("chat.end"));
+        ui.Say(u, "chat.invite", ui.ChatKeyboard());
     }
 
     public async Task Receive(BotUser u, BotInput input, CancellationToken ct)
@@ -37,6 +38,19 @@ public sealed class ConversationHandler(BotDb db, Ui ui, IClock clock, BotOption
         var unserved = recent is not null &&
             !await db.Messages.AnyAsync(x => x.ReplyToId == recent.Id && x.Role == "assistant" && x.Text != "" &&
                 (x.Status == "done" || x.Status == "partial_delivery" || x.Status == "interrupted"), ct);
+        // A merged quick follow-up belongs to the same turn and is not counted again.
+        // Crisis wording always reaches the AI, regardless of the daily limit.
+        if (!unserved && CrisisSupport.IfGenerationFailed(input.Text!) is null && !limits.TryCount(u))
+        {
+            db.Messages.Add(new ChatMessage
+            {
+                UserId = u.Id, SessionId = u.SessionId!.Value, MemoryVersion = u.MemoryVersion, Text = input.Text!, TurnText = input.Text!,
+                TurnStartedAt = now, ReadyAt = now, TurnRevision = session.Revision, UpdateId = input.UpdateId, CreatedAt = now,
+                Status = "unanswered"
+            });
+            limits.Notify(u);
+            return;
+        }
         var firstAt = unserved ? recent!.TurnStartedAt ?? recent.CreatedAt : now;
         var turnText = unserved ? (recent!.TurnText ?? recent.Text).TrimEnd() + "\n" + input.Text!.TrimStart() : input.Text!;
         var quietUntil = now.AddMilliseconds(options.ChatQuietMilliseconds);

@@ -19,6 +19,9 @@ public sealed class BotDb(DbContextOptions<BotDb> options) : DbContext(options)
     public DbSet<PollCheckpoint> Checkpoints => Set<PollCheckpoint>();
     public DbSet<KnowledgeSource> Sources => Set<KnowledgeSource>();
     public DbSet<KnowledgeChunk> Chunks => Set<KnowledgeChunk>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<Habit> Habits => Set<Habit>();
+    public DbSet<HabitMark> HabitMarks => Set<HabitMark>();
 
     protected override void OnModelCreating(ModelBuilder m)
     {
@@ -55,6 +58,14 @@ public sealed class BotDb(DbContextOptions<BotDb> options) : DbContext(options)
         m.Entity<KnowledgeChunk>().HasIndex(x => new { x.SourceId, x.Ordinal }).IsUnique();
         m.Entity<KnowledgeChunk>().HasIndex(x => x.Terms).HasMethod("gin");
         m.Entity<PollCheckpoint>().Property(x => x.Id).ValueGeneratedNever();
+        m.Entity<BotUser>().HasIndex(x => x.PlusUntil);
+        m.Entity<Payment>().HasIndex(x => x.TelegramChargeId).IsUnique();
+        m.Entity<Payment>().HasIndex(x => new { x.TelegramId, x.PaidAt });
+        m.Entity<Payment>().HasOne<BotUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.SetNull);
+        Owned<Habit>(m);
+        m.Entity<Habit>().HasIndex(x => new { x.UserId, x.Id });
+        m.Entity<HabitMark>().HasOne<Habit>().WithMany().HasForeignKey(x => x.HabitId).OnDelete(DeleteBehavior.Cascade);
+        m.Entity<HabitMark>().HasIndex(x => new { x.HabitId, x.Day }).IsUnique();
         m.Entity<Trivozhno.Infrastructure.Ai.ApiUsage>().HasIndex(x => x.At);
         m.Entity<Trivozhno.Infrastructure.Ai.ApiUsage>().HasIndex(x => new { x.Model, x.At });
     }

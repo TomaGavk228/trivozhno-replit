@@ -1,6 +1,6 @@
 namespace Trivozhno.Infrastructure.Persistence;
 
-public enum UserState { MainMenu, ChatActive, ConfessionDraft, ConfessionConfirm, ConfessionSending, MoodSelect, MoodNote, MoodHistory, Settings, ReminderFrequency, ReminderTime, ConfirmClearMemory, ConfirmDeleteData, ConfirmDiscard }
+public enum UserState { MainMenu, ChatActive, ConfessionDraft, ConfessionConfirm, ConfessionSending, MoodSelect, MoodNote, MoodHistory, Settings, ReminderFrequency, ReminderTime, ConfirmClearMemory, ConfirmDeleteData, ConfirmDiscard, Habits, HabitAdd, FriendSetup, FriendName }
 
 public sealed class BotUser
 {
@@ -24,6 +24,17 @@ public sealed class BotUser
     public long? HistoryCursorId { get; set; }
     public DateTimeOffset? HistoryLastTime { get; set; }
     public long? HistoryLastId { get; set; }
+    // Daily AI-chat counter; the day is a local date in BOT_TIMEZONE.
+    public DateOnly? ChatCountDay { get; set; }
+    public int ChatCount { get; set; }
+    // «Друг+»: paid access until this moment. Notices remember which end date they were sent for.
+    public DateTimeOffset? PlusUntil { get; set; }
+    public DateTimeOffset? PlusWarnedFor { get; set; }
+    public DateTimeOffset? PlusEndNoticeFor { get; set; }
+    public string FriendName { get; set; } = "";
+    public string FriendGender { get; set; } = "";
+    public string FriendTone { get; set; } = "";
+    public bool IsPlus(DateTimeOffset now) => PlusUntil > now;
     public void Go(UserState state) { State = state; UiToken = Guid.NewGuid().ToString("N")[..12]; }
 }
 public abstract class OwnedEntity { public Guid UserId { get; set; } }
@@ -99,6 +110,8 @@ public sealed class ReminderSetting : OwnedEntity
     public string Timezone { get; set; } = "Europe/Kyiv";
     public DateTimeOffset NextDueAt { get; set; }
     public long Version { get; set; }
+    // «Друг пише першим» (Друг+): the reminder text is composed by AI from memory.
+    public bool Personal { get; set; }
 }
 public sealed class ReminderOccurrence : OwnedEntity
 {
@@ -161,4 +174,34 @@ public sealed class KnowledgeChunk
     public string? Heading { get; set; }
     public string Text { get; set; } = "";
     public string[] Terms { get; set; } = [];
+}
+
+// Telegram Stars payment ledger. Rows survive data deletion (UserId becomes null)
+// because the charge id and Telegram ID are needed for refunds.
+public sealed class Payment
+{
+    public long Id { get; set; }
+    public Guid? UserId { get; set; }
+    public long TelegramId { get; set; }
+    public string Kind { get; set; } = "plus";
+    public int Amount { get; set; }
+    public string Currency { get; set; } = "XTR";
+    public string TelegramChargeId { get; set; } = "";
+    public string ProviderChargeId { get; set; } = "";
+    public DateTimeOffset PaidAt { get; set; }
+    public DateTimeOffset? PeriodStart { get; set; }
+    public DateTimeOffset? PeriodEnd { get; set; }
+    public DateTimeOffset? RefundedAt { get; set; }
+}
+public sealed class Habit : OwnedEntity
+{
+    public long Id { get; set; }
+    public string Title { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+}
+public sealed class HabitMark
+{
+    public long Id { get; set; }
+    public long HabitId { get; set; }
+    public DateOnly Day { get; set; }
 }
