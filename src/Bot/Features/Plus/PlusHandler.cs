@@ -59,27 +59,28 @@ public sealed class ChatLimits(Ui ui, Uk uk, IClock clock, BotOptions options)
     }
     public void Notify(BotUser u)
     {
-        if (u.IsPlus(clock.UtcNow)) { ui.Say(u, "limit.plus", ui.Keyboard(u, [ui.B("sos.button", "sos")])); return; }
+        if (u.IsPlus(clock.UtcNow)) { ui.Say(u, "limit.plus"); return; }
         ui.Text(u, uk.Format("limit.free", options.ChatDailyFree),
-            ui.Keyboard(u, [ui.B("plus.button", "plus:show"), ui.B("donate.button", "donate:show")], [ui.B("sos.button", "sos")]));
+            ui.Keyboard(u, [ui.B("plus.button", "plus:show"), ui.B("donate.button", "donate:show")]));
     }
 }
 
 public sealed class PlusHandler(BotDb db, Ui ui, Uk uk, IClock clock, BotOptions options, BotIdentity identity)
 {
-    private static readonly UserState[] Settled = [UserState.MainMenu, UserState.Settings, UserState.MoodSelect, UserState.MoodHistory,
-        UserState.Habits, UserState.FriendSetup];
     private DateTimeOffset Local(DateTimeOffset at) => TimeZoneInfo.ConvertTime(at, TimeZoneInfo.FindSystemTimeZoneById(options.Timezone));
     public string Date(DateTimeOffset at) => Local(at).ToString("dd.MM", CultureInfo.InvariantCulture);
-    private Ui.Button[] Back(BotUser u) => Settled.Contains(u.State) ? [ui.B("back.settings", "settings:show")] : [];
 
     public void Show(BotUser u)
     {
         var now = clock.UtcNow;
-        var status = u.IsPlus(now) ? uk.Format("plus.active", Date(u.PlusUntil!.Value)) : uk.Format("plus.price", options.PlusPriceStars, options.PlusDays);
         var buy = new Ui.Button(uk.Format(u.IsPlus(now) ? "plus.extend" : "plus.buy", options.PlusPriceStars), "plus:buy");
-        ui.Text(u, uk.Format("plus.text", options.PlusDailyMax) + "\n\n" + status,
-            ui.Keyboard(u, [buy], [ui.B("plus.terms", "plus:terms")], Back(u)));
+        if (u.IsPlus(now))
+        {
+            Ui.Button[] tools = options.Conversation ? [ui.B("settings.friend", "settings:friend"), ui.B("settings.habits", "habit:list")] : [ui.B("settings.habits", "habit:list")];
+            ui.Text(u, uk.Format("plus.active", Date(u.PlusUntil!.Value)), ui.Keyboard(u, tools, [buy]));
+            return;
+        }
+        ui.Text(u, uk.Format("plus.text", options.PlusPriceStars, options.PlusDays), ui.Keyboard(u, [buy], [ui.B("plus.terms", "plus:terms")]));
     }
     public void Buy(BotUser u)
     {
@@ -90,7 +91,7 @@ public sealed class PlusHandler(BotDb db, Ui ui, Uk uk, IClock clock, BotOptions
     {
         var stars = BotOptions.DonationAmounts.Select(a => new Ui.Button(uk.Format("donate.stars", a), $"donate:{a}")).ToArray();
         Ui.Button[] link = options.DonateUrl.Length > 0 ? [ui.Link("donate.mono", options.DonateUrl)] : [];
-        ui.Say(u, "donate.text", ui.Keyboard(u, stars, link, Back(u)));
+        ui.Say(u, "donate.text", ui.Keyboard(u, stars, link));
     }
     public void DonateStars(BotUser u, int amount)
     {

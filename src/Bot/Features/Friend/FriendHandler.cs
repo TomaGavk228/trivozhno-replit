@@ -25,7 +25,7 @@ public sealed class FriendHandler(Ui ui, Uk uk, IClock clock, PlusHandler plus)
                 Mark(u.FriendGender == "", "friend.gender.any", "friend:g:any")],
             [Mark(u.FriendTone == "calm", "friend.tone.calm", "friend:t:calm"), Mark(u.FriendTone == "playful", "friend.tone.playful", "friend:t:playful"),
                 Mark(u.FriendTone == "", "friend.tone.default", "friend:t:default")],
-            [ui.B("friend.reset", "friend:reset"), ui.B("back.settings", "settings:show")]));
+            [ui.B("back", "plus:show")]));
     }
     private Ui.Button Mark(bool on, string key, string code) => new((on ? "• " : "") + uk[key], code);
 

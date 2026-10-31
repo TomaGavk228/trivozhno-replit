@@ -47,8 +47,7 @@ public sealed class ReminderHandler(BotDb db, Ui ui, Uk uk, IClock clock, BotOpt
             text += "\n" + uk[r!.Personal ? "reminder.personal.on" : "reminder.personal.off"];
             rows.Add([ui.B(r.Personal ? "reminder.personal.disable" : "reminder.personal.enable", r.Personal ? "rem:personal:off" : "rem:personal:on")]);
         }
-        else if (on) rows.Add([ui.B("reminder.personal.plus", "plus:show")]);
-        rows.Add([ui.B("back.settings", "settings:show")]);
+        rows.Add([ui.B("back", "settings:show")]);
         ui.Text(u, text, ui.Keyboard(u, rows.ToArray()));
     }
     public async Task Personal(BotUser u, bool enable, CancellationToken ct)

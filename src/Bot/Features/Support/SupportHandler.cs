@@ -13,14 +13,13 @@ public sealed class SupportHandler(BotDb db, Ui ui, Uk uk, IClock clock)
     public const string Kind = "exercise";
 
     public void Sos(BotUser u) => ui.Say(u, "sos.text", ui.Keyboard(u,
-        [ui.B("ex.breath.button", "ex:breath")], [ui.B("ex.ground.button", "ex:ground")], [ui.B("sos.talk", "sos:talk")]));
+        [ui.B("ex.breath.button", "ex:breath"), ui.B("ex.ground.button", "ex:ground")], [ui.B("sos.talk", "sos:talk")]));
 
     // Queued steps wait in the ordered outbox; any later action removes the rest.
     public Task<int> StopExercise(BotUser u, CancellationToken ct) =>
         db.Outbox.Where(x => x.UserId == u.Id && x.Kind == Kind && x.Status == "queued").ExecuteDeleteAsync(ct);
 
-    public void Stopped(BotUser u) => ui.Say(u, "ex.stopped", ui.Keyboard(u,
-        [ui.B("ex.breath.button", "ex:breath"), ui.B("ex.ground.button", "ex:ground")], [ui.B("sos.talk", "sos:talk")]));
+    public void Stopped(BotUser u) => ui.Say(u, "ex.stopped");
 
     public async Task Breath(BotUser u, CancellationToken ct)
     {
@@ -49,12 +48,12 @@ public sealed class SupportHandler(BotDb db, Ui ui, Uk uk, IClock clock)
         var operation = Guid.NewGuid();
         var now = clock.UtcNow;
         var stop = ui.Keyboard(u, [ui.B("ex.stop", "ex:stop")]);
-        var end = ui.Keyboard(u, [ui.B("ex.again", "sos")], [ui.B("sos.talk", "sos:talk")]);
+        var end = ui.Keyboard(u, [ui.B("ex.again", "sos"), ui.B("sos.talk", "sos:talk")]);
         for (var i = 0; i < steps.Count; i++)
             db.Outbox.Add(new()
             {
                 UserId = u.Id, Destination = u.TelegramId, Kind = Kind, OperationId = operation, PartIndex = i,
-                Text = steps[i].Text, Markup = i == steps.Count - 1 ? end : stop,
+                Text = steps[i].Text, Markup = i == steps.Count - 1 ? end : i == 0 ? stop : null,
                 CreatedAt = now, AvailableAt = now.AddSeconds(steps[i].At)
             });
     }

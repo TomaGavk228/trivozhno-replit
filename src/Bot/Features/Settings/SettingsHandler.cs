@@ -16,18 +16,21 @@ public sealed class SettingsHandler(BotDb db, Ui ui, BotOptions options, Trivozh
         var first = new List<Ui.Button>();
         if (options.Reminders && options.Conversation) first.Add(ui.B("settings.reminders", "settings:reminders"));
         first.Add(plusButton);
-        Ui.Button[] plusRow = options.Conversation ? [ui.B("settings.friend", "settings:friend"), ui.B("settings.habits", "habit:list")] : [ui.B("settings.habits", "habit:list")];
-        var text = uk["settings.title"] + "\n\n" + (isPlus ? uk.Format("settings.plus.status", plus.Date(u.PlusUntil!.Value)) : uk["settings.plus.offer"]);
-        ui.Text(u, text, ui.Keyboard(u, first.ToArray(), plusRow,
-            [ui.B("sos.button", "sos")],
-            [ui.B("donate.button.long", "donate:show"), ui.B("share.button.menu", "share")],
-            [ui.B("settings.clear", "settings:clear"), ui.B("settings.delete", "settings:delete")],
-            [ui.B("settings.about", "settings:about"), ui.B("exit", "exit")]));
+        ui.Say(u, "settings.title", ui.Keyboard(u, first.ToArray(),
+            [ui.B("donate.button", "donate:show"), ui.B("share.button.menu", "share")],
+            [ui.B("settings.privacy", "settings:privacy")]));
     }
+    public void Privacy(BotUser u)
+    {
+        u.Go(UserState.Settings); u.PendingAction = "";
+        ui.Say(u, "settings.privacy.title", ui.Keyboard(u, [ui.B("settings.about", "settings:about")],
+            [ui.B("settings.clear", "settings:clear"), ui.B("settings.delete", "settings:delete")], [ui.B("back", "settings:show")]));
+    }
+    public void About(BotUser u) => ui.Say(u, "settings.about.text", ui.Keyboard(u, [ui.B("back", "settings:privacy")]));
     public void ConfirmClear(BotUser u)
-    { u.Go(UserState.ConfirmClearMemory); ui.Say(u, "settings.clear.confirm", ui.Inline(u, ("settings:clear:yes", "settings.clear.yes"), ("settings:cancel", "cancel"))); }
+    { u.Go(UserState.ConfirmClearMemory); ui.Say(u, "settings.clear.confirm", ui.Keyboard(u, [ui.B("settings.clear.yes", "settings:clear:yes"), ui.B("cancel", "settings:privacy")])); }
     public void ConfirmDelete(BotUser u)
-    { u.Go(UserState.ConfirmDeleteData); ui.Say(u, "settings.delete.confirm", ui.Inline(u, ("settings:delete:yes", "settings.delete.yes"), ("settings:cancel", "cancel"))); }
+    { u.Go(UserState.ConfirmDeleteData); ui.Say(u, "settings.delete.confirm", ui.Keyboard(u, [ui.B("settings.delete.yes", "settings:delete:yes"), ui.B("cancel", "settings:privacy")])); }
     public async Task Clear(BotUser u, CancellationToken ct)
     {
         u.MemoryVersion++;
@@ -37,7 +40,7 @@ public sealed class SettingsHandler(BotDb db, Ui ui, BotOptions options, Trivozh
         await db.Summaries.Where(x => x.UserId == u.Id).ExecuteDeleteAsync(ct);
         await db.Sessions.Where(x => x.UserId == u.Id).ExecuteDeleteAsync(ct);
         await db.Outbox.Where(x => x.UserId == u.Id && x.Kind == "ai").ExecuteDeleteAsync(ct);
-        ui.Say(u, "settings.cleared"); Show(u);
+        ui.Say(u, "settings.cleared"); Privacy(u);
     }
     public async Task Delete(BotUser u, CancellationToken ct)
     {

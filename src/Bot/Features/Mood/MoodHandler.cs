@@ -29,21 +29,22 @@ public sealed class MoodHandler(BotDb db, Ui ui, DraftStore drafts, Uk uk, ICloc
     {
         var daily = await Daily(u, 366, ct);
         var today = Today;
-        var week = string.Concat(Enumerable.Range(0, 7).Select(i => today.AddDays(i - 6))
-            .Select(d => daily.TryGetValue(d, out var x) ? Emoji(x.Average) : "▫️"));
+        var days = Enumerable.Range(0, 7).Select(i => today.AddDays(i - 6)).ToArray();
+        if (!days.Any(daily.ContainsKey)) return "";
+        var week = string.Join(' ', days.Select(d => daily.TryGetValue(d, out var x) ? Emoji(x.Average) : "·"));
         var day = daily.ContainsKey(today) ? today : today.AddDays(-1);
         var streak = 0;
         while (daily.ContainsKey(day)) { streak++; day = day.AddDays(-1); }
-        return uk.Format("mood.week", week) + "\n" + (streak > 0 ? uk.Format("mood.streak", streak) : uk["mood.streak.none"]);
+        return uk.Format("mood.week", week) + (streak > 1 ? "\n" + uk.Format("mood.streak", streak) : "");
     }
 
     public async Task Open(BotUser u, CancellationToken ct)
     {
         u.Go(UserState.MoodSelect);
         var summary = await WeekLine(u, ct);
-        ui.Text(u, summary + "\n\n" + uk["mood.ask"], ui.Keyboard(u,
-            [ui.B("mood.1", "mood:1")], [ui.B("mood.2", "mood:2")], [ui.B("mood.3", "mood:3")], [ui.B("mood.4", "mood:4")], [ui.B("mood.5", "mood:5")],
-            [ui.B("mood.history", "history:latest"), ui.B("mood.month", "mood:month")], [ui.B("exit", "exit")]));
+        Ui.Button[] tools = u.IsPlus(clock.UtcNow) ? [ui.B("mood.history", "history:latest"), ui.B("mood.month", "mood:month")] : [ui.B("mood.history", "history:latest")];
+        ui.Text(u, (summary.Length > 0 ? summary + "\n\n" : "") + uk["mood.ask"], ui.Keyboard(u,
+            Enumerable.Range(1, 5).Select(v => new Ui.Button(Emoji(v), $"mood:{v}")).ToArray(), tools));
     }
 
     // «Друг+»: the last four weeks against the four weeks before. No AI.
@@ -64,7 +65,7 @@ public sealed class MoodHandler(BotDb db, Ui ui, DraftStore drafts, Uk uk, ICloc
         }
         var current = daily.Where(x => x.Key > today.AddDays(-28)).ToArray();
         var previous = daily.Where(x => x.Key <= today.AddDays(-28)).ToArray();
-        if (current.Length == 0) { ui.Text(u, string.Join('\n', lines) + "\n\n" + uk["month.empty"], ui.Keyboard(u, [ui.B("mood.history", "history:latest")], [ui.B("exit", "exit")])); return; }
+        if (current.Length == 0) { ui.Text(u, string.Join('\n', lines) + "\n\n" + uk["month.empty"], ui.Keyboard(u, [ui.B("mood.history", "history:latest")])); return; }
         var best = current.OrderByDescending(x => x.Value.Average).ThenByDescending(x => x.Key).First();
         var hardest = current.OrderBy(x => x.Value.Average).ThenByDescending(x => x.Key).First();
         lines.Add("");
@@ -79,7 +80,7 @@ public sealed class MoodHandler(BotDb db, Ui ui, DraftStore drafts, Uk uk, ICloc
             string Show(double x) => Emoji(x) + " " + x.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
             lines.Add(uk.Format(key, Show(now), Show(before)));
         }
-        ui.Text(u, string.Join('\n', lines), ui.Keyboard(u, [ui.B("mood.history", "history:latest")], [ui.B("exit", "exit")]));
+        ui.Text(u, string.Join('\n', lines), ui.Keyboard(u, [ui.B("mood.history", "history:latest")]));
     }
     private static double Weighted(IEnumerable<(double Average, int Count)> days)
     {

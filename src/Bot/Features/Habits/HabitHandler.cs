@@ -44,7 +44,7 @@ public sealed class HabitHandler(BotDb db, Ui ui, Uk uk, IClock clock, ChatLimit
         if (habits.Count < MaxHabits) tools.Add(ui.B("habit.add", "habit:add"));
         if (habits.Count > 0) tools.Add(ui.B("habit.delete", "habit:del"));
         rows.Add(tools.ToArray());
-        rows.Add([ui.B("back.settings", "settings:show")]);
+        rows.Add([ui.B("back", "plus:show")]);
         var text = habits.Count == 0 ? uk.Format("habit.empty", MaxHabits) : uk["habit.title"] + "\n\n" + string.Join("\n\n", lines) + "\n\n" + uk["habit.hint"];
         if (notice is not null) text = notice + "\n\n" + text;
         ui.Text(u, text, ui.Keyboard(u, rows.ToArray()));

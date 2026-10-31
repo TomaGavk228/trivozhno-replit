@@ -192,7 +192,8 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
             case "settings:reminders" when options.Reminders && options.Conversation: await reminders.Show(u, ct); return;
             case "settings:clear": settings.ConfirmClear(u); return;
             case "settings:delete": settings.ConfirmDelete(u); return;
-            case "settings:about": ui.Say(u, "settings.about.text"); settings.Show(u); return;
+            case "settings:about": settings.About(u); return;
+            case "settings:privacy": settings.Privacy(u); return;
             case "settings:friend" when options.Conversation: friend.Show(u); return;
             case "friend:name": friend.AskName(u); return;
             case "rem:change" when options.Reminders && options.Conversation: reminders.Frequency(u); return;
