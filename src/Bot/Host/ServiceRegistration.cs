@@ -35,7 +35,7 @@ public static class ServiceRegistration
         services.AddScoped<ConversationHandler>(); services.AddScoped<ConfessionHandler>(); services.AddScoped<MoodHandler>();
         services.AddScoped<ReminderHandler>(); services.AddScoped<SettingsHandler>();
         services.AddScoped<Trivozhno.Features.Plus.ChatLimits>(); services.AddScoped<Trivozhno.Features.Plus.PlusHandler>();
-        services.AddScoped<Trivozhno.Features.Support.SupportHandler>(); services.AddScoped<Trivozhno.Features.Habits.HabitHandler>();
+        services.AddScoped<Trivozhno.Features.Habits.HabitHandler>();
         services.AddScoped<Trivozhno.Features.Friend.FriendHandler>(); services.AddSingleton<PersonalReminderComposer>();
         services.AddSingleton<InboxProcessor>(); services.AddSingleton<AiProcessor>(); services.AddSingleton<OutboxProcessor>(); services.AddSingleton<Maintenance>();
         return services;

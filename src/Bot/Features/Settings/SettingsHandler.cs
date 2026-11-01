@@ -5,20 +5,15 @@ using Trivozhno.Infrastructure.Persistence;
 
 namespace Trivozhno.Features.Settings;
 
-public sealed class SettingsHandler(BotDb db, Ui ui, BotOptions options, Trivozhno.Resources.Uk uk, ActiveGenerations active,
-    IClock clock, Trivozhno.Features.Plus.PlusHandler plus)
+public sealed class SettingsHandler(BotDb db, Ui ui, BotOptions options, Trivozhno.Resources.Uk uk, ActiveGenerations active)
 {
     public void Show(BotUser u)
     {
         u.Go(UserState.Settings); u.PendingAction = "";
-        var isPlus = u.IsPlus(clock.UtcNow);
-        var plusButton = isPlus ? new Ui.Button(uk.Format("settings.plus.active", plus.Date(u.PlusUntil!.Value)), "plus:show") : ui.B("plus.button", "plus:show");
         var first = new List<Ui.Button>();
         if (options.Reminders && options.Conversation) first.Add(ui.B("settings.reminders", "settings:reminders"));
-        first.Add(plusButton);
-        ui.Say(u, "settings.title", ui.Keyboard(u, first.ToArray(),
-            [ui.B("donate.button", "donate:show"), ui.B("share.button.menu", "share")],
-            [ui.B("settings.privacy", "settings:privacy")]));
+        first.Add(ui.B("settings.privacy", "settings:privacy"));
+        ui.Say(u, "settings.title", ui.Keyboard(u, first.ToArray(), [ui.B("donate.button", "donate:show"), ui.B("share.button.menu", "share")]));
     }
     public void Privacy(BotUser u)
     {

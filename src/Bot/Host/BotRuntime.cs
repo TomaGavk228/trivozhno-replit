@@ -40,6 +40,8 @@ public sealed class Maintenance(IServiceScopeFactory scopes, UserLocks locks, IC
     public async Task Recover(CancellationToken ct)
     {
         using var scope = scopes.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<BotDb>();
+        // Breathing exercises were removed; drop any steps still waiting from an older version.
+        await db.Outbox.Where(x => x.Kind == "exercise" && x.Status == "queued").ExecuteDeleteAsync(ct);
         await db.Outbox.Where(x => x.Status == "sending").ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "delivery_unknown")
             .SetProperty(y => y.LeaseUntil, (DateTimeOffset?)null).SetProperty(y => y.ErrorCode, "restart-during-send"), ct);
         await db.Messages.Where(x => x.Status == "processing").ExecuteUpdateAsync(x => x.SetProperty(y => y.Status, "queued").SetProperty(y => y.LeaseUntil, (DateTimeOffset?)null), ct);
@@ -109,7 +111,7 @@ public sealed class BotRuntime(IServiceScopeFactory scopes, InboxProcessor inbox
             // The command menu is cosmetic: a failure must not stop the bot.
             try
             {
-                await telegram.SetCommands(new[] { "menu", "talk", "mood", "sos", "settings", "plus", "donate", "share", "help", "paysupport", "terms" }
+                await telegram.SetCommands(new[] { "menu", "talk", "mood", "settings", "plus", "donate", "share", "help", "paysupport", "terms" }
                     .Select(c => new BotCommand(c, uk[$"cmd.{c}"])).ToArray(), stoppingToken);
             }
             catch (Exception e) when (e is TelegramFailure or HttpRequestException or TaskCanceledException && !stoppingToken.IsCancellationRequested)

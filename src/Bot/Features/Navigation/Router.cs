@@ -7,7 +7,6 @@ using Trivozhno.Features.Mood;
 using Trivozhno.Features.Plus;
 using Trivozhno.Features.Reminders;
 using Trivozhno.Features.Settings;
-using Trivozhno.Features.Support;
 using Trivozhno.Host;
 using Trivozhno.Infrastructure.Persistence;
 using Trivozhno.Infrastructure.Telegram;
@@ -18,7 +17,7 @@ namespace Trivozhno.Features.Navigation;
 // All calls occur inside one per-user lock and one database transaction. No HTTP here.
 public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clock, BotOptions options,
     ConversationHandler chat, ConfessionHandler confessions, MoodHandler mood, ReminderHandler reminders, SettingsHandler settings,
-    PlusHandler plus, SupportHandler support, HabitHandler habits, FriendHandler friend)
+    PlusHandler plus, HabitHandler habits, FriendHandler friend)
 {
     // Screens where nothing unsaved is in progress: navigation may leave them freely.
     private static bool Idle(UserState s) => s is UserState.MainMenu or UserState.Settings or UserState.MoodSelect or UserState.MoodHistory
@@ -50,13 +49,11 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
         }
         u.Blocked = false;
         if (input.Payment is { } payment) { await plus.Paid(u, payment, ct); return; }
-        // Any new action ends a running exercise; the exercise buttons restart it themselves.
-        var code = input.Action?.Split('|', 2)[0];
-        if (code is not ("ex:breath" or "ex:ground")) await support.StopExercise(u, ct);
         if (input.Unsupported) { ui.Say(u, "unsupported"); return; }
         if (command is not null && await Command(u, command, ct)) return;
         if (input.Action is { } raw)
         {
+            ui.EditTarget = input.MessageId;
             var split = raw.Split('|', 2);
             if (Ui.Guarded(split[0]) && (split.Length != 2 || split[1] != u.UiToken)) { ui.Say(u, "stale"); return; }
             await Run(u, split[0], ct); return;
@@ -67,7 +64,7 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
         var mainKeyboardVisible = Idle(u.State) && !(u.State == UserState.ReminderTime && u.CustomTime);
         if (mainKeyboardVisible)
         {
-            foreach (var (key, action) in new[] { ("menu.talk", "menu:talk"), ("menu.confession", "menu:confession"), ("menu.mood", "menu:mood"), ("menu.settings", "menu:settings") })
+            foreach (var (key, action) in new[] { ("menu.talk", "menu:talk"), ("menu.confession", "menu:confession"), ("menu.mood", "menu:mood"), ("menu.plus", "plus:show"), ("menu.settings", "menu:settings") })
             {
                 if (!uk.Is(key, input.Text)) continue;
                 u.Go(UserState.MainMenu); u.PendingAction = "";
@@ -75,7 +72,6 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
                 return;
             }
         }
-        if ((mainKeyboardVisible || u.State == UserState.ChatActive) && uk.Is("sos.button", input.Text)) { support.Sos(u); return; }
 
         if (u.State == UserState.ConfessionConfirm && options.Confessions)
         {
@@ -92,11 +88,17 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
             if (await drafts.HasText(u, ct)) Discard(u, "mood:skip"); else await mood.Save(u, true, ct);
             return;
         }
+        // The 🆘 button existed in an earlier version; quietly bring the current keyboard back.
+        if (uk.Is("sos.button", input.Text))
+        {
+            if (u.State == UserState.ChatActive) ui.Say(u, "chat.already", ui.ChatKeyboard()); else ui.Menu(u);
+            return;
+        }
         // Old/hidden service keys never become a confession, note or AI message.
         if (new[]
         {
             "chat.end", "exit", "done", "mood.save", "mood.skip", "sos.button",
-            "menu.talk", "menu.confession", "menu.mood", "menu.settings",
+            "menu.talk", "menu.confession", "menu.mood", "menu.plus", "menu.settings",
             "confession.send", "confession.edit", "cancel"
         }.Any(key => uk.Is(key, input.Text)))
         {
@@ -133,7 +135,6 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
             case "/help": plus.Help(u); return true;
             case "/paysupport": await plus.PaySupport(u, ct); return true;
             case "/terms": plus.Terms(u); return true;
-            case "/sos": support.Sos(u); return true;
             default: return false;
         }
     }
@@ -144,10 +145,6 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
         switch (action)
         {
             case "exit": await Exit(u, false, ct); return;
-            case "sos": support.Sos(u); return;
-            case "ex:breath": await support.Breath(u, ct); return;
-            case "ex:ground": await support.Ground(u, ct); return;
-            case "ex:stop": support.Stopped(u); return;
             case "plus:show": plus.Show(u); return;
             case "plus:buy": plus.Buy(u); return;
             case "plus:terms": plus.Terms(u); return;
@@ -178,12 +175,12 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
             }
         }
         if (u.State == UserState.ConfessionSending && action == "conf:retry" && options.Confessions) { await confessions.Retry(u, ct); return; }
-        if (action is "menu:talk" or "rem:start" or "sos:talk" && u.State == UserState.ChatActive) { ui.Say(u, "chat.already", ui.ChatKeyboard()); return; }
+        if (action is "menu:talk" or "rem:start" && u.State == UserState.ChatActive) { ui.Say(u, "chat.already", ui.ChatKeyboard()); return; }
         if (!Navigation(action)) { ui.Say(u, "stale"); return; }
         if (!await Leave(u, action, ct)) return;
         switch (action)
         {
-            case "menu:talk" or "rem:start" or "sos:talk" when options.Conversation: chat.Open(u); return;
+            case "menu:talk" or "rem:start" when options.Conversation: chat.Open(u); return;
             case "menu:confession" when options.Confessions: await confessions.Open(u, ct); return;
             case "menu:mood" when options.Mood: await mood.Open(u, ct); return;
             case "mood:month" when options.Mood: await mood.Month(u, ct); return;
@@ -222,7 +219,7 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
     }
 
     private static bool Navigation(string action) =>
-        action is "menu:talk" or "rem:start" or "sos:talk" or "menu:confession" or "menu:mood" or "menu:settings" or "offer:yes" ||
+        action is "menu:talk" or "rem:start" or "menu:confession" or "menu:mood" or "menu:settings" or "offer:yes" ||
         action.StartsWith("settings:", StringComparison.Ordinal) || action.StartsWith("rem:", StringComparison.Ordinal) ||
         action.StartsWith("mood:", StringComparison.Ordinal) || action.StartsWith("history:", StringComparison.Ordinal) ||
         action.StartsWith("habit:", StringComparison.Ordinal) || action.StartsWith("friend:", StringComparison.Ordinal);
@@ -249,8 +246,8 @@ public sealed class Router(BotDb db, Ui ui, DraftStore drafts, Uk uk, IClock clo
     {
         var state = u.ReturnState; u.PendingAction = ""; u.Go(state);
         if (state == UserState.ConfessionConfirm) await confessions.Confirm(u, ct);
-        else if (state == UserState.ConfessionDraft) ui.Say(u, "confession.invite", ui.Reply("done", "exit"));
-        else if (state == UserState.MoodNote) ui.Say(u, "mood.note", ui.Reply("mood.save", "mood.skip", "exit"));
+        else if (state == UserState.ConfessionDraft) ui.Say(u, "confession.invite", ui.ReplyRows(true, ["done", "exit"]));
+        else if (state == UserState.MoodNote) ui.Say(u, "mood.note", ui.ReplyPair("mood.save", "mood.skip", "exit"));
         else ui.Menu(u);
     }
     private async Task Exit(BotUser u, bool successfulChat, CancellationToken ct)

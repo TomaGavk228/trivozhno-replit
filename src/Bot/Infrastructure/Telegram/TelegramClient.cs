@@ -5,7 +5,7 @@ using Trivozhno.Host;
 namespace Trivozhno.Infrastructure.Telegram;
 
 // Retain only routing fields; never persist Telegram names, usernames or whole profiles.
-public sealed record BotInput(long UpdateId, long TelegramId, string? Text, string? Action, bool Unsupported = false, PaymentInfo? Payment = null);
+public sealed record BotInput(long UpdateId, long TelegramId, string? Text, string? Action, bool Unsupported = false, PaymentInfo? Payment = null, long? MessageId = null);
 // Only service fields of a successful Telegram payment; no card or profile data exists for Stars.
 public sealed record PaymentInfo(string Currency, int Amount, string Payload, string ChargeId, string ProviderChargeId);
 public sealed record BotCommand(string Command, string Description);
@@ -14,6 +14,8 @@ public interface ITelegramClient
 {
     Task<PollBatch> Poll(long offset, CancellationToken ct);
     Task<long> Send(long destination, string text, string? markup, CancellationToken ct);
+    // Replaces the text and inline buttons of an earlier bot message; falls back to a new message.
+    Task<long> Edit(long destination, long messageId, string text, string? markup, CancellationToken ct);
     Task Typing(long destination, CancellationToken ct);
     Task<string> Validate(CancellationToken ct);
     Task<long> SendInvoice(long destination, string invoiceJson, CancellationToken ct);
@@ -21,8 +23,9 @@ public interface ITelegramClient
 }
 // Bot username from getMe, used for share links.
 public sealed class BotIdentity { public volatile string Username = ""; }
-public sealed class TelegramFailure(int code, int retryAfter = 0) : Exception($"Telegram code {code}")
+public sealed class TelegramFailure(int code, int retryAfter = 0, string description = "") : Exception($"Telegram code {code}")
 {
+    public string Description { get; } = description;
     public int Code { get; } = code;
     public int RetryAfter { get; } = retryAfter;
 }
@@ -39,7 +42,8 @@ public sealed class TelegramClient(HttpClient http, BotOptions options, IClock c
         {
             var code = json.RootElement.TryGetProperty("error_code", out var c) ? c.GetInt32() : (int)response.StatusCode;
             var retry = json.RootElement.TryGetProperty("parameters", out var p) && p.TryGetProperty("retry_after", out var r) ? r.GetInt32() : 0;
-            json.Dispose(); throw new TelegramFailure(code, retry);
+            var description = json.RootElement.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "";
+            json.Dispose(); throw new TelegramFailure(code, retry, description);
         }
         return json;
     }
@@ -82,7 +86,8 @@ public sealed class TelegramClient(HttpClient http, BotOptions options, IClock c
                 if (!cb.TryGetProperty("message", out var msg) || !IsPrivate(msg) || IsBot(cb.GetProperty("from"))) continue;
                 var from = cb.GetProperty("from").GetProperty("id").GetInt64();
                 if (from != msg.GetProperty("chat").GetProperty("id").GetInt64()) continue;
-                inputs.Add(new(id, from, null, cb.TryGetProperty("data", out var d) ? d.GetString() : ""));
+                inputs.Add(new(id, from, null, cb.TryGetProperty("data", out var d) ? d.GetString() : "",
+                    MessageId: msg.TryGetProperty("message_id", out var mid) ? mid.GetInt64() : null));
             }
             else if (update.TryGetProperty("message", out var message) && IsPrivate(message) && message.TryGetProperty("from", out var sender) && !IsBot(sender))
             {
@@ -113,6 +118,23 @@ public sealed class TelegramClient(HttpClient http, BotOptions options, IClock c
             using var json = await Call("sendMessage", payload, ct);
             return json.RootElement.GetProperty("result").GetProperty("message_id").GetInt64();
         }
+        catch (TelegramFailure e) when (e.Code >= 500) { throw new DeliveryUnknownException(); }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException) { throw new DeliveryUnknownException(); }
+    }
+    public async Task<long> Edit(long destination, long messageId, string text, string? markup, CancellationToken ct)
+    {
+        try
+        {
+            using var parsed = markup is null ? null : JsonDocument.Parse(markup);
+            var payload = new Dictionary<string, object?> { ["chat_id"] = destination, ["message_id"] = messageId, ["text"] = text,
+                ["link_preview_options"] = new { is_disabled = true } };
+            if (parsed is not null) payload["reply_markup"] = parsed.RootElement;
+            using var json = await Call("editMessageText", payload, ct);
+            return messageId;
+        }
+        catch (TelegramFailure e) when (e.Code == 400 && e.Description.Contains("not modified", StringComparison.OrdinalIgnoreCase)) { return messageId; }
+        // Too old, deleted or not editable: show the screen as a new message instead.
+        catch (TelegramFailure e) when (e.Code == 400) { return await Send(destination, text, markup, ct); }
         catch (TelegramFailure e) when (e.Code >= 500) { throw new DeliveryUnknownException(); }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException) { throw new DeliveryUnknownException(); }
     }

@@ -44,7 +44,8 @@ public sealed class MoodHandler(BotDb db, Ui ui, DraftStore drafts, Uk uk, ICloc
         var summary = await WeekLine(u, ct);
         Ui.Button[] tools = u.IsPlus(clock.UtcNow) ? [ui.B("mood.history", "history:latest"), ui.B("mood.month", "mood:month")] : [ui.B("mood.history", "history:latest")];
         ui.Text(u, (summary.Length > 0 ? summary + "\n\n" : "") + uk["mood.ask"], ui.Keyboard(u,
-            Enumerable.Range(1, 5).Select(v => new Ui.Button(Emoji(v), $"mood:{v}")).ToArray(), tools));
+            [ui.B("mood.5", "mood:5"), ui.B("mood.4", "mood:4"), ui.B("mood.3", "mood:3")],
+            [ui.B("mood.2", "mood:2"), ui.B("mood.1", "mood:1")], tools));
     }
 
     // «Друг+»: the last four weeks against the four weeks before. No AI.
@@ -90,7 +91,7 @@ public sealed class MoodHandler(BotDb db, Ui ui, DraftStore drafts, Uk uk, ICloc
     public async Task Select(BotUser u, int value, CancellationToken ct)
     {
         await drafts.Begin(u, "mood", value, ct); u.Go(UserState.MoodNote);
-        ui.Say(u, "mood.note", ui.Reply("mood.save", "mood.skip", "exit"));
+        ui.Say(u, "mood.note", ui.ReplyPair("mood.save", "mood.skip", "exit"));
     }
     public async Task Save(BotUser u, bool skip, CancellationToken ct)
     {

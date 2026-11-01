@@ -17,18 +17,24 @@ public sealed class Ui(BotDb db, Uk uk, IClock clock, BotOptions options, Active
         || code.StartsWith("habit:d:", StringComparison.Ordinal);
     public static string Data(BotUser u, string code) => Guarded(code) ? $"{code}|{u.UiToken}" : code;
     public string Reply(params string[] keys) => ReplyRows(true, keys.Select(k => new[] { k }).ToArray());
+    // Two short actions side by side and «Вийти» below: shorter than a column of three.
+    public string ReplyPair(string first, string second, string exit) => ReplyRows(true, [first, second], [exit]);
     public string ReplyRows(bool persistent, params string[][] rows) => JsonSerializer.Serialize(new
     { keyboard = rows.Select(r => r.Select(k => new { text = uk[k] })), resize_keyboard = true, is_persistent = persistent });
     // The chat keyboard can be folded with Telegram's keyboard icon; the buttons stay available.
-    public string ChatKeyboard() => ReplyRows(false, new[] { "sos.button", "chat.end" });
+    public string ChatKeyboard() => ReplyRows(false, new[] { "chat.end" });
+    // One wide main action on top, everything else in pairs below it.
     public string MainKeyboard()
     {
-        var keys = new List<string>();
-        if (options.Conversation) keys.Add("menu.talk");
-        if (options.Confessions) keys.Add("menu.confession");
-        if (options.Mood) keys.Add("menu.mood");
-        keys.Add("menu.settings");
-        return ReplyRows(true, keys.Chunk(2).ToArray());
+        var rest = new List<string>();
+        if (options.Mood) rest.Add("menu.mood");
+        if (options.Confessions) rest.Add("menu.confession");
+        rest.Add("menu.plus");
+        rest.Add("menu.settings");
+        var rows = new List<string[]>();
+        if (options.Conversation) rows.Add(["menu.talk"]);
+        rows.AddRange(rest.Chunk(2));
+        return ReplyRows(true, rows.ToArray());
     }
     public Button B(string key, string code) => new(uk[key], code);
     public Button Link(string key, string url) => new(uk[key], null, url);
@@ -52,10 +58,26 @@ public sealed class Ui(BotDb db, Uk uk, IClock clock, BotOptions options, Active
         });
     }
     public void Say(BotUser u, string key, string? markup = null) => Text(u, uk[key], markup);
+    // Set by Router for a button press: the first screen of the answer replaces
+    // that message in place (only text with inline buttons or none can be edited).
+    public long? EditTarget { get; set; }
     public void Text(BotUser u, string text, string? markup = null, string kind = "ui", Guid? sessionId = null, long? memoryVersion = null, long? reminderVersion = null,
-        long? turnRevision = null, long? replyToId = null) =>
+        long? turnRevision = null, long? replyToId = null)
+    {
+        var target = EditTarget; EditTarget = null;
+        if (target is { } id && kind == "ui" && (markup is null || markup.StartsWith("{\"inline_keyboard\"", StringComparison.Ordinal)) &&
+            TextSplitter.Split(text).Count == 1)
+        {
+            db.Outbox.Add(new()
+            {
+                UserId = u.Id, Destination = u.TelegramId, Kind = "edit", TelegramMessageId = id, Text = text, Markup = markup,
+                OperationId = Guid.NewGuid(), PartIndex = 0, CreatedAt = clock.UtcNow, AvailableAt = clock.UtcNow
+            });
+            return;
+        }
         Enqueue(u.Id, u.TelegramId, text, markup, kind, sessionId, memoryVersion, reminderVersion,
             turnRevision: turnRevision, replyToId: replyToId);
+    }
     public void Enqueue(Guid? user, long destination, string text, string? markup = null, string kind = "ui", Guid? sessionId = null,
         long? memoryVersion = null, long? reminderVersion = null, Guid? operation = null, long? turnRevision = null, long? replyToId = null)
     {
@@ -75,7 +97,7 @@ public sealed class Ui(BotDb db, Uk uk, IClock clock, BotOptions options, Active
         u.Go(UserState.MainMenu);
         u.PendingAction = "";
         var text = firstStart
-            ? uk["welcome"] + (options.TikTokUrl.Length > 0 ? "\n\n" + uk.Format("welcome.tiktok", options.TikTokUrl) : "")
+            ? uk.Format("welcome", options.ChatDailyFree) + (options.TikTokUrl.Length > 0 ? "\n\n" + uk.Format("welcome.tiktok", options.TikTokUrl) : "")
             : message ?? uk["menu.title"];
         Text(u, text, MainKeyboard());
     }

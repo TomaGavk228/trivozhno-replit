@@ -21,7 +21,7 @@ public sealed class ConfessionHandler(BotDb db, Ui ui, DraftStore drafts, Uk uk,
             return;
         }
         await drafts.Begin(u, "confession", null, ct); u.Go(UserState.ConfessionDraft);
-        ui.Say(u, "confession.invite", ui.Reply("done", "exit"));
+        ui.Say(u, "confession.invite", ui.ReplyRows(true, ["done", "exit"]));
     }
         public async Task Confirm(BotUser u, CancellationToken ct)
     {
@@ -36,13 +36,13 @@ public sealed class ConfessionHandler(BotDb db, Ui ui, DraftStore drafts, Uk uk,
         u.Go(UserState.ConfessionConfirm);
 
         ui.Say(u, "confession.confirm",
-            ui.Reply("confession.send", "confession.edit", "cancel"));
+            ui.ReplyPair("confession.send", "confession.edit", "cancel"));
         }
     public async Task Edit(BotUser u, CancellationToken ct)
     {
         var d = await drafts.Get(u, ct) ?? throw new InvalidOperationException("Draft missing");
         d.ReplaceOnNext = true; u.Go(UserState.ConfessionDraft);
-        ui.Say(u, "confession.edit.invite", ui.Reply("done", "exit"));
+        ui.Say(u, "confession.edit.invite", ui.ReplyRows(true, ["done", "exit"]));
     }
     public async Task Send(BotUser u, CancellationToken ct)
     {
